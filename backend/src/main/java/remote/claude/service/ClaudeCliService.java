@@ -7,6 +7,9 @@ import remote.claude.config.ClaudeCliConfig;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
@@ -47,7 +50,13 @@ public class ClaudeCliService {
                               Runnable onComplete) {
 
         ProcessBuilder pb = buildProcess(prompt, sessionId, model, projectDir);
-        pb.environment().put("CLI_CODE_MODE", "true");
+        Map<String, String> env = pb.environment();
+        env.put("CLI_CODE_MODE", "true");
+        // Pass through env vars for API proxy auth
+        copyEnvIfPresent(env, "ANTHROPIC_BASE_URL");
+        copyEnvIfPresent(env, "ANTHROPIC_API_KEY");
+        copyEnvIfPresent(env, "ANTHROPIC_AUTH_TOKEN");
+        copyEnvIfPresent(env, "ANTHROPIC_CUSTOM_HEADERS");
 
         try {
             Process process = pb.start();
@@ -99,6 +108,13 @@ public class ClaudeCliService {
         }
     }
 
+    private void copyEnvIfPresent(Map<String, String> target, String key) {
+        String value = System.getenv(key);
+        if (value != null && !value.isEmpty()) {
+            target.put(key, value);
+        }
+    }
+
     private ProcessBuilder buildProcess(String prompt, String sessionId,
                                         String model, String projectDir) {
 
@@ -107,32 +123,40 @@ public class ClaudeCliService {
 
         ProcessBuilder pb = new ProcessBuilder();
 
-        // Build arguments
-        if (sessionId != null && !sessionId.isEmpty()) {
-            // Resume existing session with --print mode
-            pb.command(claude, "--resume", sessionId, "-p", prompt);
-        } else {
-            pb.command(claude, "-p", prompt);
-        }
+        // Build arguments using ProcessBuilder's built-in argument escaping
+        // This is SAFE: ProcessBuilder passes each argument as a separate token
+        // to the OS, preventing command injection. User input NEVER goes into
+        // a shell string.
+        List<String> args = new ArrayList<>();
+        args.add(claude);
 
         if (model != null && !model.isEmpty()) {
-            // Use full model name if available
-            for (ClaudeCliConfig.ModelConfig mc : config.getModels()) {
-                if (mc.getId().equals(model) && mc.getFullName() != null) {
-                    // Use as is -- the proxy handles routing if configured
-                    // But if the proxy knows the id, use the id as model name
-                    break;
-                }
+            // Validate model against allowed list
+            boolean validModel = config.getModels().stream()
+                    .anyMatch(m -> m.getId().equals(model));
+            if (!validModel) {
+                log.warn("Ignoring unknown model: {}", model);
+            } else {
+                args.add("--model");
+                args.add(model);
             }
-            // Add model parameter at position 1 (after claude, before -p)
-            pb.command().add(1, "--model");
-            pb.command().add(2, model);
         }
 
+        if (sessionId != null && !sessionId.isEmpty()) {
+            args.add("--resume");
+            args.add(sessionId);
+            args.add("--print");
+            args.add(prompt);
+        } else {
+            args.add("--print");
+            args.add(prompt);
+        }
+
+        pb.command(args);
         pb.directory(new File(workDir));
         pb.redirectErrorStream(false);
 
-        log.info("Running: {} (dir: {})", String.join(" ", pb.command()), workDir);
+        log.info("Running: {} (dir: {})", String.join(" ", args), workDir);
 
         return pb;
     }

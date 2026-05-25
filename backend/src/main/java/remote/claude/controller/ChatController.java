@@ -12,7 +12,6 @@ import remote.claude.service.ClaudeCliService;
 
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @RestController
 @RequestMapping("/api")
@@ -31,26 +30,37 @@ public class ChatController {
 
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chat(@RequestBody ChatRequest request) {
-        String token = config.getAuthToken();
-        // If auth is configured, validate it from header
-        // (Token validation simplified — in production use a filter)
-
-        SseEmitter emitter = new SseEmitter(600_000L); // 10 min timeout
+        SseEmitter emitter = new SseEmitter(600_000L);
         String sessionId = request.getSessionId();
         String model = request.getModel();
+        // Only pass --model if explicitly requested; otherwise let CLI use its default
+
+        StringBuilder contentBuffer = new StringBuilder();
+        boolean[] hasContent = {false};
 
         Process process = claudeService.runCommand(
                 request.getPrompt(),
                 sessionId,
                 model,
                 request.getProjectDir(),
-                // onLine — forward each line as SSE event
-                line -> sendEvent(emitter, "line", line),
-                // onError — send as error event
-                error -> sendEvent(emitter, "error", error),
-                // onComplete — send done and close
+                // onLine — combine all output as the final result
+                line -> {
+                    // Skip warning lines about stdin
+                    if (line.contains("Warning: no stdin data received")) return;
+                    if (line.startsWith("API Error") || line.contains("API Error")) {
+                        sendEvent(emitter, "error", line);
+                        return;
+                    }
+                    hasContent[0] = true;
+                    contentBuffer.append(line).append("\n");
+                    sendEvent(emitter, "line", line);
+                },
+                error -> {
+                    if (error.contains("Warning:")) return;
+                    sendEvent(emitter, "error", error);
+                },
                 () -> {
-                    sendEvent(emitter, "done", "DONE");
+                    sendEvent(emitter, "done", hasContent[0] ? contentBuffer.toString() : "DONE");
                     try { emitter.complete(); } catch (Exception ignored) {}
                 }
         );

@@ -3,19 +3,12 @@ claude-remote:
   default-project-dir: "C:\\Users\\MR\\Desktop\\deepseek"
   auth:
     token: ""
+  proxy-base-url: "http://127.0.0.1:15721/claude-desktop"
+  override-config-file: ""
   models:
-    - id: "opus"
-      name: "Claude Opus"
+    - id: "claude-opus-4-7"
+      name: "Claude Opus 4.7"
       provider: "anthropic"
-      full-name: "claude-opus-4-7"
-    - id: "sonnet"
-      name: "Claude Sonnet"
-      provider: "anthropic"
-      full-name: "claude-sonnet-4-6"
-    - id: "haiku"
-      name: "Claude Haiku"
-      provider: "anthropic"
-      full-name: "claude-haiku-4-5-20251001"
 
 server:
   port: 3000

@@ -4,9 +4,10 @@ const API_BASE = '/api';
 
 export const api = axios.create({
   baseURL: API_BASE,
-  timeout: 10000,
+  timeout: 15000,
 });
 
+// ── Types ──
 export interface Model {
   id: string;
   name: string;
@@ -35,25 +36,39 @@ export interface FileTreeNode {
 export interface AppConfig {
   claudePath: string;
   defaultProjectDir: string;
+  proxyBaseUrl: string;
   models: Model[];
 }
 
-// Sessions
+export interface ProjectInfo {
+  path: string;
+  name: string;
+  dirName: string;
+  sessionCount: string;
+}
+
+// ── Sessions ──
 export const fetchSessions = (projectDir = '') =>
   api.get<Session[]>('/sessions', { params: { projectDir } });
 
 export const deleteSession = (id: string, projectDir = '') =>
   api.delete(`/sessions/${id}`, { params: { projectDir } });
 
-// Models
+// ── Models ──
 export const fetchModels = () =>
   api.get<Model[]>('/models');
 
-// Config
+// ── Config ──
 export const fetchConfig = () =>
   api.get<AppConfig>('/config');
 
-// Files
+export const updateConfig = (data: Record<string, unknown>) =>
+  api.put<{ status: string; path: string }>('/config', data);
+
+export const fetchProjects = () =>
+  api.get<ProjectInfo[]>('/config/projects');
+
+// ── Files ──
 export const fetchFileTree = (dir = '', depth = 2) =>
   api.get<FileTreeNode>('/files/tree', { params: { dir, depth } });
 
@@ -61,13 +76,13 @@ export const readFile = (path: string) =>
   api.get<{ content: string; path: string }>('/files/read', { params: { path } });
 
 export const uploadFile = (file: File, dir = '') => {
-  const formData = new FormData();
-  formData.append('file', file);
-  if (dir) formData.append('dir', dir);
-  return api.post('/files/upload', formData);
+  const fd = new FormData();
+  fd.append('file', file);
+  if (dir) fd.append('dir', dir);
+  return api.post('/files/upload', fd);
 };
 
-// Chat SSE
+// ── Chat SSE ──
 export function connectChat(
   prompt: string,
   sessionId: string | null,
@@ -77,62 +92,37 @@ export function connectChat(
   onError: (err: string) => void,
   onDone: () => void
 ): AbortController {
-  const controller = new AbortController();
-
+  const ctrl = new AbortController();
   fetch(`${API_BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, sessionId, model, projectDir }),
-    signal: controller.signal,
-  }).then(async (response) => {
-    const reader = response.body?.getReader();
-    if (!reader) { onError('No response stream'); onDone(); return; }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-
+    signal: ctrl.signal,
+  }).then(async (res) => {
+    const reader = res.body?.getReader();
+    if (!reader) { onError('No stream'); onDone(); return; }
+    const dec = new TextDecoder();
+    let buf = '';
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
       for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          const eventType = line.slice(7).trim();
-          // Next line will be data
-          continue;
-        }
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6).trim();
-          // Look back for event type
-          continue;
-        }
-        // Try to parse as JSON SSE format
-        if (line.startsWith('{"')) {
-          try {
-            const parsed = JSON.parse(line);
-            if (parsed.type === 'content_block_delta') {
-              onLine(parsed.delta?.text || '');
-            } else if (parsed.type === 'message') {
-              onLine(parsed.content || '');
-            }
-          } catch { /* not JSON */ }
-        } else if (line.trim()) {
-          // Plain text line from Claude
-          onLine(line);
+        const trimmed = line.trim();
+        if (trimmed.startsWith('event: ')) continue;
+        if (trimmed.startsWith('data: ')) {
+          const data = trimmed.slice(6);
+          if (data === 'DONE') continue;
+          onLine(data);
         }
       }
     }
     onDone();
   }).catch((err) => {
-    if (err.name !== 'AbortError') {
-      onError(err.message);
-    }
+    if (err.name !== 'AbortError') onError(err.message);
     onDone();
   });
-
-  return controller;
+  return ctrl;
 }

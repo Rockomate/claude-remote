@@ -14,10 +14,39 @@ import java.util.*;
 public class FileService {
 
     private static final Logger log = LoggerFactory.getLogger(FileService.class);
+    private static final long MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10MB
     private static final Set<String> BINARY_EXTENSIONS = Set.of(
             ".exe", ".dll", ".so", ".dylib", ".jar", ".war", ".zip", ".tar",
             ".gz", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg",
             ".mp3", ".mp4", ".avi", ".mov", ".pdf", ".doc", ".docx");
+
+    private final String baseDir;
+
+    public FileService() {
+        this.baseDir = System.getProperty("user.home") + File.separator;
+    }
+
+    /**
+     * Resolve path safely relative to a base directory.
+     * Prevents path traversal attacks.
+     */
+    private File safeResolve(String basePath, String userPath) {
+        File base = new File(basePath).getAbsoluteFile();
+        File resolved = new File(base, userPath).getAbsoluteFile();
+        try {
+            String resolvedPath = resolved.getCanonicalPath();
+            String baseCanonical = base.getCanonicalPath();
+            if (!resolvedPath.startsWith(baseCanonical + File.separator)
+                    && !resolvedPath.equals(baseCanonical)) {
+                log.warn("Path traversal detected: {} -> {}", userPath, resolvedPath);
+                return null;
+            }
+            return resolved;
+        } catch (IOException e) {
+            log.warn("Failed to resolve path: {}", userPath, e);
+            return null;
+        }
+    }
 
     public FileTreeResponse listFiles(String dirPath, int maxDepth) {
         File root = new File(dirPath);
@@ -32,9 +61,9 @@ public class FileService {
         return rootNode;
     }
 
-    public String readFileContent(String filePath) {
-        File file = new File(filePath);
-        if (!file.exists() || !file.isFile()) return null;
+    public String readFileContent(String baseDir, String filePath) {
+        File file = safeResolve(baseDir, filePath);
+        if (file == null || !file.exists() || !file.isFile()) return null;
 
         String ext = getExtension(file.getName()).toLowerCase();
         if (BINARY_EXTENSIONS.contains(ext)) {
@@ -42,6 +71,10 @@ public class FileService {
         }
 
         try {
+            long size = Files.size(file.toPath());
+            if (size > 1024 * 1024) { // 1MB text limit
+                return "[File too large to preview: " + file.getName() + " (" + (size / 1024) + "KB)]";
+            }
             return Files.readString(file.toPath(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             return "[Failed to read: " + e.getMessage() + "]";
@@ -49,15 +82,26 @@ public class FileService {
     }
 
     public FileInfo saveFile(String dirPath, String fileName, byte[] content) throws IOException {
+        // Validate file size
+        if (content.length > MAX_UPLOAD_SIZE) {
+            throw new IllegalArgumentException("File too large. Maximum size: 10MB");
+        }
+
+        // Sanitize filename (prevent path traversal in filename)
+        String safeName = new File(fileName).getName();
+        if (!safeName.equals(fileName)) {
+            throw new IllegalArgumentException("Invalid filename");
+        }
+
         File targetDir = new File(dirPath);
         if (!targetDir.exists()) targetDir.mkdirs();
 
-        File target = new File(targetDir, fileName);
+        File target = new File(targetDir, safeName);
         Files.write(target.toPath(), content);
 
         FileInfo info = new FileInfo();
         info.setPath(target.getAbsolutePath());
-        info.setName(fileName);
+        info.setName(safeName);
         info.setSize(content.length);
         return info;
     }
@@ -78,7 +122,6 @@ public class FileService {
 
         List<FileTreeResponse> children = new ArrayList<>();
         for (File f : files) {
-            // Skip hidden files/dirs and node_modules, target, .git
             String name = f.getName();
             if (name.startsWith(".") || name.equals("node_modules")
                     || name.equals("target") || name.equals(".git")) continue;

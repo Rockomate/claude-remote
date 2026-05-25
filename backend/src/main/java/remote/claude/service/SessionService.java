@@ -23,26 +23,61 @@ public class SessionService {
     private static final String SANITIZE_PREFIX = "C--Users-MR-Desktop-";
 
     public String getSessionDir(String projectDir) {
-        // Derive the session directory from project path
-        // Claude Code stores sessions at: ~/.claude/projects/<sanitized-path>/
-        if (projectDir == null) return null;
+        if (projectDir == null || projectDir.isEmpty()) return null;
 
+        String sessionStorage = findSessionDirByCwd(projectDir);
+        if (sessionStorage != null) return sessionStorage;
+
+        // Fallback: compute sanitized name
         String sanitized = projectDir
                 .replace(":", "")
                 .replace("\\", "-")
                 .replace("/", "-")
+                .replaceAll("[^a-zA-Z0-9-]", "-")
                 .replaceAll("-+", "-")
                 .replaceAll("^-|-$", "");
 
-        // Handle known prefix
         if (!sanitized.startsWith("C--Users-MR-Desktop-")) {
             sanitized = SANITIZE_PREFIX + sanitized;
         }
 
         String userHome = System.getProperty("user.home");
-        String sessionStorage = userHome + "\\.claude\\projects\\" + sanitized;
-        log.debug("Session dir for {}: {}", projectDir, sessionStorage);
-        return sessionStorage;
+        return userHome + "\\.claude\\projects\\" + sanitized;
+    }
+
+    /**
+     * Find the session directory by scanning all project dirs for one
+     * whose session files contain the given cwd.
+     */
+    private String findSessionDirByCwd(String projectDir) {
+        String userHome = System.getProperty("user.home");
+        File projectsRoot = new File(userHome + "\\.claude\\projects");
+        if (!projectsRoot.exists() || !projectsRoot.isDirectory()) return null;
+
+        File[] projectDirs = projectsRoot.listFiles(File::isDirectory);
+        if (projectDirs == null) return null;
+
+        for (File pd : projectDirs) {
+            File[] jsonlFiles = pd.listFiles((f, n) -> n.endsWith(".jsonl"));
+            if (jsonlFiles == null || jsonlFiles.length == 0) continue;
+
+            // Check first session file for matching cwd
+            for (File jf : jsonlFiles) {
+                try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                        new java.io.FileReader(jf))) {
+                    String line;
+                    int lines = 0;
+                    while ((line = reader.readLine()) != null && lines < 10) {
+                        if (line.contains("\"cwd\"") && line.contains(projectDir.replace("\\", "\\\\"))) {
+                            return pd.getAbsolutePath();
+                        }
+                        lines++;
+                    }
+                } catch (Exception ignored) {}
+                break; // Only check first file per project dir
+            }
+        }
+        return null;
     }
 
     public List<Session> listSessions(String projectDir) {

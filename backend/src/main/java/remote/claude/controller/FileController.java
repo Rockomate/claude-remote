@@ -36,9 +36,10 @@ public class FileController {
 
     @GetMapping("/read")
     public ResponseEntity<?> readFile(@RequestParam String path) {
-        String content = fileService.readFileContent(path);
+        String baseDir = config.getDefaultProjectDir();
+        String content = fileService.readFileContent(baseDir, path);
         if (content == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "File not found: " + path));
+            return ResponseEntity.badRequest().body(Map.of("error", "File not found or access denied: " + path));
         }
         return ResponseEntity.ok(Map.of("content", content, "path", path));
     }
