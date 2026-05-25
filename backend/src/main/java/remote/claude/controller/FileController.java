@@ -7,6 +7,7 @@ import remote.claude.config.ClaudeCliConfig;
 import remote.claude.dto.FileTreeResponse;
 import remote.claude.service.FileService;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.*;
 
@@ -27,6 +28,9 @@ public class FileController {
             @RequestParam(required = false, defaultValue = "") String dir,
             @RequestParam(required = false, defaultValue = "2") int depth) {
         String targetDir = dir.isEmpty() ? config.getDefaultProjectDir() : dir;
+        if (!isWithinAllowedPaths(targetDir)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Access denied: " + targetDir));
+        }
         FileTreeResponse tree = fileService.listFiles(targetDir, depth);
         if (tree == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "Directory not found: " + targetDir));
@@ -49,11 +53,29 @@ public class FileController {
             @RequestParam("file") MultipartFile file,
             @RequestParam(required = false, defaultValue = "") String dir) throws IOException {
         String targetDir = dir.isEmpty() ? config.getDefaultProjectDir() : dir;
+        if (!isWithinAllowedPaths(targetDir)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Access denied: " + targetDir));
+        }
+        if (file.getSize() > 10 * 1024 * 1024) {
+            return ResponseEntity.badRequest().body(Map.of("error", "File too large (max 10MB)"));
+        }
         FileService.FileInfo info = fileService.saveFile(targetDir, file.getOriginalFilename(), file.getBytes());
         return ResponseEntity.ok(Map.of(
                 "path", info.getPath(),
                 "name", info.getName(),
                 "size", info.getSize()
         ));
+    }
+
+    private boolean isWithinAllowedPaths(String dir) {
+        String projectDir = config.getDefaultProjectDir();
+        if (projectDir == null) return false;
+        try {
+            File allowed = new File(projectDir).getCanonicalFile();
+            File target = new File(dir).getCanonicalFile();
+            return target.getPath().startsWith(allowed.getPath());
+        } catch (IOException e) {
+            return false;
+        }
     }
 }

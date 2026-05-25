@@ -31,8 +31,9 @@ export default function Settings() {
       const data: Record<string, unknown> = {};
       if (workDir !== config?.defaultProjectDir) data.defaultProjectDir = workDir;
       if (proxyUrl !== config?.proxyBaseUrl) data.proxyBaseUrl = proxyUrl;
+      if (authToken) data.authToken = authToken;
       const r = await updateConfig(data);
-      setMsg(`Saved to ${r.data.path}`);
+      setMsg('Saved to ' + r.data.path);
     } catch (e) {
       setMsg('Failed to save: ' + (e as Error).message);
     }

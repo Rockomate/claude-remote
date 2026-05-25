@@ -66,13 +66,20 @@ public class ChatController {
         );
 
         if (process != null) {
-            String procKey = sessionId != null ? sessionId : "new";
+            String procKey = sessionId != null ? sessionId : "chat-" + System.currentTimeMillis();
             activeProcesses.put(procKey, process);
-            emitter.onCompletion(() -> activeProcesses.remove(procKey));
+            emitter.onCompletion(() -> {
+                process.destroyForcibly();
+                activeProcesses.remove(procKey);
+            });
             emitter.onTimeout(() -> {
                 process.destroyForcibly();
                 activeProcesses.remove(procKey);
             });
+        } else {
+            sendEvent(emitter, "error", "Failed to start Claude process");
+            sendEvent(emitter, "done", "DONE");
+            try { emitter.complete(); } catch (Exception ignored) {}
         }
 
         return emitter;

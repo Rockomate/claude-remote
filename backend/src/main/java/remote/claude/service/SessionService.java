@@ -19,16 +19,13 @@ public class SessionService {
 
     private static final Logger log = LoggerFactory.getLogger(SessionService.class);
 
-    // Replace special chars to match Claude Code's project dir naming scheme
-    private static final String SANITIZE_PREFIX = "C--Users-MR-Desktop-";
-
     public String getSessionDir(String projectDir) {
         if (projectDir == null || projectDir.isEmpty()) return null;
 
         String sessionStorage = findSessionDirByCwd(projectDir);
         if (sessionStorage != null) return sessionStorage;
 
-        // Fallback: compute sanitized name
+        // Fallback: compute sanitized name (works for ASCII paths, C: drive)
         String sanitized = projectDir
                 .replace(":", "")
                 .replace("\\", "-")
@@ -36,10 +33,6 @@ public class SessionService {
                 .replaceAll("[^a-zA-Z0-9-]", "-")
                 .replaceAll("-+", "-")
                 .replaceAll("^-|-$", "");
-
-        if (!sanitized.startsWith("C--Users-MR-Desktop-")) {
-            sanitized = SANITIZE_PREFIX + sanitized;
-        }
 
         String userHome = System.getProperty("user.home");
         return userHome + "\\.claude\\projects\\" + sanitized;
@@ -61,20 +54,23 @@ public class SessionService {
             File[] jsonlFiles = pd.listFiles((f, n) -> n.endsWith(".jsonl"));
             if (jsonlFiles == null || jsonlFiles.length == 0) continue;
 
-            // Check first session file for matching cwd
             for (File jf : jsonlFiles) {
                 try (java.io.BufferedReader reader = new java.io.BufferedReader(
                         new java.io.FileReader(jf))) {
                     String line;
                     int lines = 0;
                     while ((line = reader.readLine()) != null && lines < 10) {
-                        if (line.contains("\"cwd\"") && line.contains(projectDir.replace("\\", "\\\\"))) {
+                        // Handle both forward and backslash in cwd
+                        String normalizedStoredPath = projectDir.replace("\\", "\\\\");
+                        if (line.contains("\"cwd\"")
+                                && (line.contains(projectDir)
+                                    || line.contains(normalizedStoredPath))) {
                             return pd.getAbsolutePath();
                         }
                         lines++;
                     }
                 } catch (Exception ignored) {}
-                break; // Only check first file per project dir
+                break;
             }
         }
         return null;
