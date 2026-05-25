@@ -1,0 +1,15 @@
+/backend/target/
+/backend/.mvn/
+/backend/.settings/
+/backend/.classpath
+/backend/.project
+/backend/*.iml
+
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.vite/
+
+.env
+*.log
+.DS_Store
+Thumbs.db
