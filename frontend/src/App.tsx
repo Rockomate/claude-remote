@@ -208,11 +208,7 @@ export default function App() {
               <div>Claude Remote</div>
               <div style={{ fontSize: 12 }}>Type a message or select a session</div>
             </div>
-          ) : messages.map((m, i) => {
-            const [copiedMd, setCopiedMd] = useState(false);
-            const [copiedTxt, setCopiedTxt] = useState(false);
-            // Can't use hooks in map, use inline buttons instead
-            return (
+          ) : messages.map((m, i) =>
               <div key={i} className={`message ${m.role} ${m.streaming ? 'streaming' : ''}`}>
                 {m.role === 'assistant' && !m.streaming ? (
                   <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
@@ -227,8 +223,7 @@ export default function App() {
                 )}
                 {m.streaming && <div className="typing-indicator"><span /><span /><span /></div>}
               </div>
-            );
-          })}
+            )}
           <div ref={bottomRef} />
         </div>
         <div className="input-area">
