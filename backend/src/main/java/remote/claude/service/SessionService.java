@@ -141,12 +141,36 @@ public class SessionService {
                     ZoneId.systemDefault()));
             session.setCreatedAt(session.getUpdatedAt());
 
-            // Parse JSONL to count messages and extract preview
+            // Parse JSONL to extract name, messages, count and preview
             List<String> lines = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
             int msgCount = 0;
             StringBuilder preview = new StringBuilder();
+            String customTitle = null;
+            boolean titleFound = false;
 
             for (String line : lines) {
+                // Extract custom title (last occurrence = current name)
+                if (!titleFound && line.contains("\"type\":\"custom-title\"")) {
+                    // Next line or same line has the content
+                    int ci = line.indexOf("\"custom-title\"");
+                    // The title content could be in the next JSON object
+                    titleFound = true; // Mark to find the actual title text
+                }
+                if (titleFound && customTitle == null) {
+                    // Try to extract title from quotes in content field
+                    int ci = line.indexOf("\"content\"");
+                    if (ci >= 0) {
+                        int q1 = line.indexOf('"', ci + 10);
+                        if (q1 >= 0) {
+                            int q2 = line.indexOf('"', q1 + 1);
+                            if (q2 >= 0) {
+                                customTitle = line.substring(q1 + 1, q2);
+                                if (customTitle.length() > 60) customTitle = customTitle.substring(0, 60);
+                            }
+                        }
+                    }
+                }
+
                 if (line.contains("\"role\":\"user\"") || line.contains("\"type\":\"message\"")) {
                     msgCount++;
                 }
@@ -158,6 +182,15 @@ public class SessionService {
                     if (snippet.length() > 200) snippet = snippet.substring(0, 200) + "...";
                     preview.append(snippet);
                 }
+            }
+
+            // Use custom title if found, otherwise first 30 chars of preview
+            if (customTitle != null && !customTitle.isEmpty()) {
+                session.setName(customTitle);
+            } else if (preview.length() > 0) {
+                String nameFromPreview = preview.toString().replaceAll("[\\n\\r]", " ").trim();
+                if (nameFromPreview.length() > 40) nameFromPreview = nameFromPreview.substring(0, 40) + "...";
+                session.setName(nameFromPreview);
             }
 
             session.setMessageCount(msgCount);
