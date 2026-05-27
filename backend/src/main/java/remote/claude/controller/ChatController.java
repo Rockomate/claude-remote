@@ -1,5 +1,6 @@
 package remote.claude.controller;
 
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -11,6 +12,7 @@ import remote.claude.dto.ChatRequest;
 import remote.claude.service.ClaudeCliService;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
@@ -29,10 +31,16 @@ public class ChatController {
     }
 
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chat(@RequestBody ChatRequest request) {
+    public SseEmitter chat(@Valid @RequestBody ChatRequest request) {
         SseEmitter emitter = new SseEmitter(600_000L);
         String sessionId = request.getSessionId();
         String model = request.getModel();
+        if (model == null || model.isEmpty()) {
+            List<ClaudeCliConfig.ModelConfig> models = config.getModels();
+            if (!models.isEmpty()) {
+                model = models.get(0).getId();
+            }
+        }
         // Only pass --model if explicitly requested; otherwise let CLI use its default
 
         StringBuilder contentBuffer = new StringBuilder();
@@ -87,12 +95,17 @@ public class ChatController {
 
     @PostMapping("/chat/cancel")
     public ResponseEntity<Void> cancelChat(@RequestParam(required = false) String sessionId) {
-        String key = sessionId != null ? sessionId : "new";
-        Process process = activeProcesses.get(key);
-        if (process != null && process.isAlive()) {
-            process.destroyForcibly();
-            activeProcesses.remove(key);
+        // Try exact match first, then prefix scan (for timestamp-keyed processes)
+        if (sessionId != null) {
+            Process process = activeProcesses.remove(sessionId);
+            if (process != null && process.isAlive()) {
+                process.destroyForcibly();
+                return ResponseEntity.ok().build();
+            }
         }
+        // Destroy all active processes if no specific sessionId
+        activeProcesses.values().forEach(p -> { if (p.isAlive()) p.destroyForcibly(); });
+        activeProcesses.clear();
         return ResponseEntity.ok().build();
     }
 

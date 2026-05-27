@@ -27,21 +27,34 @@ public class ModelController {
 
     @GetMapping
     public ResponseEntity<List<Map<String, String>>> listModels() {
-        // Try fetching from proxy API first
         List<Map<String, String>> remoteModels = fetchFromProxy();
+
+        // Merge: only return models that appear in BOTH proxy and config
+        List<Map<String, String>> merged = new ArrayList<>();
         if (remoteModels != null && !remoteModels.isEmpty()) {
-            return ResponseEntity.ok(remoteModels);
+            Set<String> configModelIds = config.getModels().stream()
+                    .map(ClaudeCliConfig.ModelConfig::getId)
+                    .collect(java.util.stream.Collectors.toSet());
+            for (Map<String, String> rm : remoteModels) {
+                String id = rm.get("id");
+                if (configModelIds.contains(id)) {
+                    merged.add(rm);
+                }
+            }
         }
 
-        // Fallback to config
-        List<Map<String, String>> models = config.getModels().stream()
-                .map(m -> Map.of(
-                        "id", m.getId(),
-                        "name", m.getName(),
-                        "provider", m.getProvider() != null ? m.getProvider() : "unknown"
-                ))
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(models);
+        if (merged.isEmpty()) {
+            // Fallback: only return config models (trust the YAML)
+            return ResponseEntity.ok(config.getModels().stream()
+                    .map(m -> Map.<String, String>of(
+                            "id", m.getId(),
+                            "name", m.getName(),
+                            "provider", m.getProvider() != null ? m.getProvider() : "unknown"
+                    ))
+                    .toList());
+        }
+
+        return ResponseEntity.ok(merged);
     }
 
     /**

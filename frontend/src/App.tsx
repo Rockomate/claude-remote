@@ -71,6 +71,7 @@ export default function App() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showCancel, setShowCancel] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -96,21 +97,41 @@ export default function App() {
     if (!text || loading) return;
     setInput('');
     setLoading(true);
+    setShowCancel(true);
+    // Always pass model explicitly to avoid CLI default (claude-opus-4-7) not being supported
+    const modelToUse = selectedModel || models[0]?.id;
     setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '', streaming: true }]);
     let fullContent = '';
-    const controller = connectChat(text, activeSessionId, selectedModel, projectDir,
+    const controller = connectChat(text, activeSessionId, modelToUse, projectDir,
       (line) => {
         fullContent += line + '\n';
         setMessages(prev => { const u = [...prev]; if (u.length > 0) u[u.length - 1] = { role: 'assistant', content: fullContent, streaming: true }; return u; });
       },
-      (err) => { setMessages(prev => [...prev, { role: 'error', content: err }]); setLoading(false); },
+      (err) => { setMessages(prev => [...prev, { role: 'error', content: err }]); setLoading(false); setShowCancel(false); },
       () => {
         setMessages(prev => { const u = [...prev]; if (u.length > 0) u[u.length - 1] = { role: 'assistant', content: fullContent, streaming: false }; return u; });
         setLoading(false);
+        setShowCancel(false);
         loadSessions();
       }
     );
     abortRef.current = controller;
+  };
+
+  const handleCancel = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      fetch('/api/chat/cancel', { method: 'POST' }).catch(() => {});
+    }
+    setMessages(prev => {
+      const u = [...prev];
+      if (u.length > 0 && u[u.length - 1].streaming) {
+        u[u.length - 1] = { ...u[u.length - 1], content: u[u.length - 1].content + '\n[Cancelled]', streaming: false };
+      }
+      return u;
+    });
+    setLoading(false);
+    setShowCancel(false);
   };
 
   const handleNewSession = () => { setActiveSessionId(null); setMessages([]); };
@@ -135,6 +156,7 @@ export default function App() {
               {models.map(m => <option key={m.id} value={m.id}>{m.name || m.id}</option>)}
             </select>
           )}
+          <button className="icon-btn" onClick={() => setMessages([])} title="Clear chat" style={{ fontSize: 14 }}>&#128465;</button>
           <Link to="/settings" className="icon-btn" style={{ textDecoration: 'none' }} title="Settings">&#9881;</Link>
         </div>
         <MessageList messages={messages} />
@@ -142,7 +164,11 @@ export default function App() {
           <div className="input-wrapper">
             <textarea placeholder="Type a message..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} rows={1} />
           </div>
-          <button className="send-btn" onClick={handleSend} disabled={loading || !input.trim()}>{loading ? '...' : 'Send'}</button>
+          {showCancel ? (
+            <button className="send-btn" onClick={handleCancel} style={{ background: '#666' }}>Cancel</button>
+          ) : (
+            <button className="send-btn" onClick={handleSend} disabled={!input.trim()}>{'Send'}</button>
+          )}
         </div>
       </div>
     </div>

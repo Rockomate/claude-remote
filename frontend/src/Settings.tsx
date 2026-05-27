@@ -34,6 +34,10 @@ export default function Settings() {
       if (authToken) data.authToken = authToken;
       const r = await updateConfig(data);
       setMsg('Saved to ' + r.data.path);
+      // Update local config so main page picks it up on next load
+      if (config) {
+        setConfig({ ...config, defaultProjectDir: workDir, proxyBaseUrl: proxyUrl });
+      }
     } catch (e) {
       setMsg('Failed to save: ' + (e as Error).message);
     }
