@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import remote.claude.model.Session;
+import remote.claude.model.ChatMessage;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -11,7 +12,10 @@ import java.nio.file.*;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -105,6 +109,81 @@ public class SessionService {
         if (!f.exists()) return null;
 
         return parseSessionFile(f);
+    }
+
+    public List<ChatMessage> getSessionMessages(String sessionId, String projectDir) {
+        String sessionDir = getSessionDir(projectDir);
+        if (sessionDir == null) return Collections.emptyList();
+
+        File f = new File(sessionDir, sessionId + ".jsonl");
+        if (!f.exists()) return Collections.emptyList();
+
+        List<ChatMessage> messages = new ArrayList<>();
+        try {
+            List<String> lines = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8);
+            for (String line : lines) {
+                try {
+                    // Extract role
+                    String role = null;
+                    int ri = line.indexOf("\"role\":\"");
+                    if (ri >= 0) {
+                        int rs = ri + 8;
+                        int re = line.indexOf('"', rs);
+                        if (re > rs) role = line.substring(rs, re);
+                    }
+                    // Only process user/assistant messages
+                    if (role == null || (!role.equals("user") && !role.equals("assistant"))) continue;
+
+                    // Extract content (can be string or array of blocks)
+                    String content = extractContent(line);
+                    if (content != null && !content.isEmpty()) {
+                        messages.add(new ChatMessage(role, content, null));
+                    }
+                } catch (Exception ignored) {}
+            }
+        } catch (IOException e) {
+            log.warn("Failed to read session messages: {}", f.getName(), e);
+        }
+
+        return messages;
+    }
+
+    private String extractContent(String jsonLine) {
+        // Find "content": field
+        int ci = jsonLine.indexOf("\"content\":");
+        if (ci < 0) return null;
+
+        String after = jsonLine.substring(ci + 10).trim();
+
+        // Case 1: content is a string: "content":"some text"
+        if (after.startsWith("\"")) {
+            int q1 = 0;
+            StringBuilder sb = new StringBuilder();
+            for (int i = 1; i < after.length(); i++) {
+                char c = after.charAt(i);
+                if (c == '\\') { sb.append(after.charAt(++i)); continue; }
+                if (c == '"') break;
+                sb.append(c);
+            }
+            return sb.toString().trim();
+        }
+
+        // Case 2: content is array of blocks: "content":[{"type":"text","text":"..."}]
+        if (after.startsWith("[")) {
+            int textIdx = after.indexOf("\"text\":\"");
+            if (textIdx < 0) return null;
+            int t1 = textIdx + 8;
+            StringBuilder sb = new StringBuilder();
+            for (int i = t1; i < after.length(); i++) {
+                char c = after.charAt(i);
+                if (c == '\\') { sb.append(after.charAt(++i)); continue; }
+                if (c == '"') break;
+                sb.append(c);
+            }
+            return sb.toString().trim();
+        }
+
+        return null;
     }
 
     public boolean deleteSession(String sessionId, String projectDir) {

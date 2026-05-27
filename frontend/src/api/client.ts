@@ -47,12 +47,21 @@ export interface ProjectInfo {
   sessionCount: string;
 }
 
+export interface ChatMessageItem {
+  role: string;
+  content: string;
+  timestamp: string | null;
+}
+
 // ── Sessions ──
 export const fetchSessions = (projectDir = '') =>
   api.get<Session[]>('/sessions', { params: { projectDir } });
 
 export const deleteSession = (id: string, projectDir = '') =>
   api.delete(`/sessions/${id}`, { params: { projectDir } });
+
+export const fetchSessionMessages = (id: string, projectDir = '') =>
+  api.get<ChatMessageItem[]>(`/sessions/${id}/messages`, { params: { projectDir } });
 
 // ── Models ──
 export const fetchModels = () =>

@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { fetchSessions, deleteSession, fetchModels, fetchConfig, connectChat, fetchProjects } from './api/client';
-import type { Session, Model, ProjectInfo } from './api/client';
+import { fetchSessions, deleteSession, fetchModels, fetchConfig, connectChat, fetchProjects, fetchSessionMessages } from './api/client';
+import type { Session, Model, ProjectInfo, ChatMessageItem } from './api/client';
 
 interface Message {
   role: 'user' | 'assistant' | 'error';
@@ -40,11 +40,12 @@ function ProjectSwitcher({ projects, currentDir, onSwitch }: {
   );
 }
 
-function Sidebar({ sessions, activeSession, onSelect, onNew, onDelete, open, onClose }: {
-  sessions: Session[]; activeSession: string | null;
+function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, onNew, onDelete, open, onClose }: {
+  sessions: Session[]; activeSession: string | null; search: string; onSearchChange: (v: string) => void;
   onSelect: (id: string) => void; onNew: () => void; onDelete: (id: string) => void;
   open: boolean; onClose: () => void;
 }) {
+  const filtered = search ? sessions.filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || s.preview?.toLowerCase().includes(search.toLowerCase())) : sessions;
   return (<>
     <div className={`sidebar-overlay ${open ? 'open' : ''}`} onClick={onClose} />
     <div className={`sidebar ${open ? 'mobile-open' : ''}`}>
@@ -52,10 +53,14 @@ function Sidebar({ sessions, activeSession, onSelect, onNew, onDelete, open, onC
         <h2>Sessions</h2>
         <button className="close-btn" onClick={onClose}>&times;</button>
       </div>
+      <div style={{ padding: '8px' }}>
+        <input placeholder="Search sessions..." value={search} onChange={e => onSearchChange(e.target.value)}
+          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #2a2a4a', background: '#1a1a2e', color: '#e0e0e0', fontSize: 13, outline: 'none' }} />
+      </div>
       <button className="new-session-btn" onClick={() => { onNew(); onClose(); }}>+ New Session</button>
       <div className="sidebar-sessions">
-        {sessions.length === 0 && <div style={{ color: '#666', textAlign: 'center', padding: 24, fontSize: 13 }}>No sessions</div>}
-        {sessions.map(s => (
+        {filtered.length === 0 && <div style={{ color: '#666', textAlign: 'center', padding: 24, fontSize: 13 }}>{search ? 'No matching sessions' : 'No sessions'}</div>}
+        {filtered.map(s => (
           <div key={s.id} className={`session-item ${s.id === activeSession ? 'active' : ''}`}
             onClick={() => { onSelect(s.id); onClose(); }}
             onContextMenu={(e) => { e.preventDefault(); if (confirm('Delete this session?')) onDelete(s.id); }}>
@@ -92,6 +97,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showCancel, setShowCancel] = useState(false);
   const [errorToast, setErrorToast] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -117,7 +124,24 @@ export default function App() {
     setProjectDir(dir);
     setActiveSessionId(null);
     setMessages([]);
+    setSearchQuery('');
     fetchSessions(dir).then(r => setSessions(r.data));
+  };
+
+  const handleSelectSession = async (id: string) => {
+    setActiveSessionId(id);
+    setLoadingHistory(true);
+    try {
+      const res = await fetchSessionMessages(id, projectDir);
+      const chatMessages: Message[] = [];
+      for (const m of res.data) {
+        chatMessages.push({ role: m.role as 'user' | 'assistant', content: m.content });
+      }
+      setMessages(chatMessages);
+    } catch {
+      setErrorToast('Failed to load session history');
+    }
+    setLoadingHistory(false);
   };
 
   const handleSend = () => {
@@ -149,12 +173,17 @@ export default function App() {
   };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } };
 
-  const copyMsg = (content: string) => navigator.clipboard.writeText(content);
+  // Auto-grow textarea
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px'; }
+  }, [input]);
 
   return (
     <div className="app-layout">
-      <Sidebar sessions={sessions} activeSession={activeSessionId} onSelect={setActiveSessionId}
-        onNew={handleNewSession} onDelete={handleDeleteSession} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar sessions={sessions} activeSession={activeSessionId} search={searchQuery} onSearchChange={setSearchQuery}
+        onSelect={handleSelectSession} onNew={handleNewSession} onDelete={handleDeleteSession} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="main-panel">
         <div className="chat-header">
           <button className="menu-btn" onClick={() => setSidebarOpen(true)}>&#9776;</button>
@@ -171,32 +200,40 @@ export default function App() {
           <Link to="/settings" className="icon-btn" style={{ textDecoration: 'none' }} title="Settings">&#9881;</Link>
         </div>
         <div className="message-list">
-          {messages.length === 0 ? (
+          {loadingHistory ? (
+            <div style={{ textAlign: 'center', padding: 32, color: '#666' }}>Loading history...</div>
+          ) : messages.length === 0 ? (
             <div className="empty-state">
               <div style={{ fontSize: 40, marginBottom: 8 }}>&#9670;</div>
               <div>Claude Remote</div>
-              <div style={{ fontSize: 12 }}>Type a message to start</div>
+              <div style={{ fontSize: 12 }}>Type a message or select a session</div>
             </div>
-          ) : messages.map((m, i) => (
-            <div key={i} className={`message ${m.role} ${m.streaming ? 'streaming' : ''}`}>
-              {m.role === 'assistant' && !m.streaming ? (
-                <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
-              ) : (
-                m.content.split('\n').map((ln, j) => <span key={j}>{ln}<br /></span>)
-              )}
-              {!m.streaming && m.role === 'assistant' && m.content && (
-                <div style={{ marginTop: 6 }}>
-                  <button onClick={() => copyMsg(m.content)} className="icon-btn" style={{ fontSize: 11, padding: '2px 8px', background: '#0f3460', borderRadius: 4 }}>Copy</button>
-                </div>
-              )}
-              {m.streaming && <div className="typing-indicator"><span /><span /><span /></div>}
-            </div>
-          ))}
+          ) : messages.map((m, i) => {
+            const [copiedMd, setCopiedMd] = useState(false);
+            const [copiedTxt, setCopiedTxt] = useState(false);
+            // Can't use hooks in map, use inline buttons instead
+            return (
+              <div key={i} className={`message ${m.role} ${m.streaming ? 'streaming' : ''}`}>
+                {m.role === 'assistant' && !m.streaming ? (
+                  <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
+                ) : (
+                  m.content.split('\n').map((ln, j) => <span key={j}>{ln}<br /></span>)
+                )}
+                {!m.streaming && m.role === 'assistant' && m.content && (
+                  <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
+                    <CopyButton content={m.content} label="Copy MD" />
+                    <CopyButton content={m.content.replace(/\*\*(.+?)\*\*/g, '$1').replace(/```[\s\S]*?```/g, '').replace(/`([^`]+)`/g, '$1')} label="Copy Text" />
+                  </div>
+                )}
+                {m.streaming && <div className="typing-indicator"><span /><span /><span /></div>}
+              </div>
+            );
+          })}
           <div ref={bottomRef} />
         </div>
         <div className="input-area">
           <div className="input-wrapper">
-            <textarea placeholder="Type a message..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} rows={1} />
+            <textarea ref={textareaRef} placeholder="Type a message..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} rows={1} style={{ maxHeight: 120 }} />
           </div>
           {showCancel ? (
             <button className="send-btn" onClick={handleCancel} style={{ background: '#666' }}>Cancel</button>
@@ -207,5 +244,15 @@ export default function App() {
       </div>
       {errorToast && <Toast msg={errorToast} onClose={() => setErrorToast('')} />}
     </div>
+  );
+}
+
+function CopyButton({ content, label }: { content: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button onClick={() => { navigator.clipboard.writeText(content); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+      className="icon-btn" style={{ fontSize: 11, padding: '2px 8px', background: '#0f3460', borderRadius: 4 }}>
+      {copied ? 'Copied!' : label}
+    </button>
   );
 }

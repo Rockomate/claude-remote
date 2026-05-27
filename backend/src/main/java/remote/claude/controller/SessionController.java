@@ -2,6 +2,7 @@ package remote.claude.controller;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import remote.claude.model.ChatMessage;
 import remote.claude.model.Session;
 import remote.claude.service.SessionService;
 
@@ -30,6 +31,19 @@ public class SessionController {
         Session session = sessionService.getSession(id, projectDir);
         if (session == null) return ResponseEntity.notFound().build();
         return ResponseEntity.ok(session);
+    }
+
+    @GetMapping("/{id}/messages")
+    public ResponseEntity<List<ChatMessage>> getSessionMessages(
+            @PathVariable String id,
+            @RequestParam(required = false, defaultValue = "") String projectDir) {
+        List<ChatMessage> messages = sessionService.getSessionMessages(id, projectDir);
+        if (messages.isEmpty()) {
+            // Check if session exists at all
+            Session s = sessionService.getSession(id, projectDir);
+            if (s == null) return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(messages);
     }
 
     @DeleteMapping("/{id}")
