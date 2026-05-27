@@ -101,7 +101,7 @@ export default function App() {
   const init = useCallback(() => {
     fetchConfig().then(r => setProjectDir(r.data.defaultProjectDir));
     fetchModels().then(r => { setModels(r.data); if (r.data.length > 0) setSelectedModel(r.data[0].id); });
-    fetchProjects().then(r => setProjects(r.data)).catch(() => {});
+    fetchProjects().then(r => setProjects(r.data)).catch(() => setErrorToast('Failed to load projects'));
   }, []);
 
   useEffect(() => { init(); }, [init]);
@@ -144,7 +144,9 @@ export default function App() {
   };
 
   const handleNewSession = () => { setActiveSessionId(null); setMessages([]); };
-  const handleDeleteSession = async (id: string) => { try { await deleteSession(id, projectDir); loadSessions(); if (activeSessionId === id) { setActiveSessionId(null); setMessages([]); } } catch {} };
+  const handleDeleteSession = async (id: string) => {
+    try { await deleteSession(id, projectDir); loadSessions(); if (activeSessionId === id) { setActiveSessionId(null); setMessages([]); } } catch (e) { setErrorToast('Failed to delete session'); }
+  };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } };
 
   const copyMsg = (content: string) => navigator.clipboard.writeText(content);

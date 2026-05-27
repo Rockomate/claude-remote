@@ -11,6 +11,7 @@ import remote.claude.config.ClaudeCliConfig;
 import remote.claude.dto.ChatRequest;
 import remote.claude.service.ClaudeCliService;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,6 +33,19 @@ public class ChatController {
 
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chat(@Valid @RequestBody ChatRequest request) {
+        // Validate CLI path before attempting to run
+        try {
+            validateClaudePath();
+        } catch (Exception e) {
+            SseEmitter errorEmitter = new SseEmitter(5000L);
+            try {
+                errorEmitter.send(SseEmitter.event().name("error").data(e.getMessage()));
+                errorEmitter.send(SseEmitter.event().name("done").data("DONE"));
+            } catch (IOException ignored) {}
+            errorEmitter.complete();
+            return errorEmitter;
+        }
+
         SseEmitter emitter = new SseEmitter(600_000L);
         String sessionId = request.getSessionId();
         String model = request.getModel();
@@ -115,7 +129,22 @@ public class ChatController {
                     .name(event)
                     .data(data != null ? data : ""));
         } catch (IOException e) {
-            // Client disconnected, ignore
+            // Client disconnected — try to complete the emitter
+            try { emitter.complete(); } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * Validate and return the CLI binary path. Returns null if not found.
+     */
+    private void validateClaudePath() {
+        String path = config.getClaudePath();
+        if (path == null || path.isEmpty()) {
+            throw new RuntimeException("claude-path not configured");
+        }
+        File f = new File(path);
+        if (!f.exists() || !f.isFile()) {
+            throw new RuntimeException("claude binary not found: " + path);
         }
     }
 }

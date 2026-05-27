@@ -90,15 +90,24 @@ export function connectChat(
   projectDir: string | null,
   onLine: (text: string) => void,
   onError: (err: string) => void,
-  onDone: () => void
+  onDone: () => void,
+  timeoutMs = 120000
 ): AbortController {
   const ctrl = new AbortController();
+  const timeout = setTimeout(() => {
+    ctrl.abort();
+    onError('Request timed out');
+    onDone();
+  }, timeoutMs);
+
   fetch(`${API_BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, sessionId, model, projectDir }),
     signal: ctrl.signal,
   }).then(async (res) => {
+    clearTimeout(timeout);
+    if (!res.ok) { onError('HTTP ' + res.status); onDone(); return; }
     const reader = res.body?.getReader();
     if (!reader) { onError('No stream'); onDone(); return; }
     const dec = new TextDecoder();
@@ -121,6 +130,7 @@ export function connectChat(
     }
     onDone();
   }).catch((err) => {
+    clearTimeout(timeout);
     if (err.name !== 'AbortError') onError(err.message);
     onDone();
   });

@@ -11,12 +11,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 @Service
 public class ClaudeCliService {
 
     private static final Logger log = LoggerFactory.getLogger(ClaudeCliService.class);
+    private static final long CLI_TIMEOUT_MS = 300_000; // 5 minutes
 
     private final ClaudeCliConfig config;
 
@@ -87,14 +89,21 @@ public class ClaudeCliService {
                 }
             });
 
-            // Wait for completion
+            // Wait for completion with timeout
             CompletableFuture.runAsync(() -> {
                 try {
-                    int exitCode = process.waitFor();
-                    log.info("CLI process exited with code {}", exitCode);
+                    boolean finished = process.waitFor(CLI_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    if (!finished) {
+                        log.warn("CLI process timed out after {}ms, destroying", CLI_TIMEOUT_MS);
+                        process.destroyForcibly();
+                    } else {
+                        int exitCode = process.exitValue();
+                        log.info("CLI process exited with code {}", exitCode);
+                    }
                     if (onComplete != null) onComplete.run();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    process.destroyForcibly();
                     log.error("CLI process interrupted", e);
                 }
             });
