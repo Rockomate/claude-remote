@@ -277,10 +277,9 @@ public class SessionService {
             }
 
             if (customTitle != null && !customTitle.isEmpty()) {
-                session.setName(customTitle);
+                session.setName(sanitizeName(customTitle));
             } else if (preview != null && !preview.isEmpty()) {
-                String name = preview.length() > 40 ? preview.substring(0, 40) + "..." : preview;
-                session.setName(name);
+                session.setName(sanitizeName(preview));
             }
 
             session.setMessageCount(msgCount);
@@ -291,6 +290,21 @@ public class SessionService {
             log.debug("Failed to parse session {}: {}", file.getName(), e.getMessage());
             return null;
         }
+    }
+
+    private String sanitizeName(String raw) {
+        if (raw == null) return null;
+        // Remove JSON artifacts, escape sequences, and control characters
+        String clean = raw
+                .replaceAll("[\\x00-\\x1F\\x7F]", "") // control chars
+                .replaceAll("\\\\[nrt]", " ") // escaped newlines/tabs
+                .replaceAll("\\\\\"", "\"") // escaped quotes
+                .replaceAll("\"[a-zA-Z_]+\":\\s*\"?", "") // JSON field patterns
+                .replaceAll("\\{[^}]{0,20}\\}", "") // short JSON fragments
+                .replaceAll("\\s+", " ") // collapse whitespace
+                .trim();
+        if (clean.length() > 50) clean = clean.substring(0, 50) + "...";
+        return clean.isEmpty() ? null : clean;
     }
 
     /**
