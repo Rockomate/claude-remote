@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { fetchSessions, deleteSession, fetchModels, fetchConfig, connectChat, fetchProjects, fetchSessionMessages } from './api/client';
 import type { Session, Model, ProjectInfo, ChatMessageItem } from './api/client';
 
@@ -310,7 +312,18 @@ export default function App() {
           ) : messages.map((m, i) =>
               <div key={i} className={`message ${m.role} ${m.streaming ? 'streaming' : ''}`}>
                 {m.role === 'assistant' && !m.streaming ? (
-                  <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
+                  <Markdown remarkPlugins={[remarkGfm]} components={{
+                    code({ className, children, ...props }) {
+                      const match = /language-(\w+)/.exec(className || '');
+                      return match ? (
+                        <SyntaxHighlighter style={vscDarkPlus} language={match[1]} PreTag="div">
+                          {String(children).replace(/\n$/, '')}
+                        </SyntaxHighlighter>
+                      ) : (
+                        <code className={className} {...props}>{children}</code>
+                      );
+                    }
+                  }}>{m.content}</Markdown>
                 ) : (
                   m.content.split('\n').map((ln, j) => <span key={j}>{ln}<br /></span>)
                 )}
