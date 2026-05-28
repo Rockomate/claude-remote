@@ -179,5 +179,20 @@ public class ConfigController {
         if (overrides.containsKey("authToken")) {
             config.setAuthToken((String) overrides.get("authToken"));
         }
+        // Handle models list from Settings page
+        if (overrides.containsKey("models")) {
+            @SuppressWarnings("unchecked")
+            java.util.List<java.util.Map<String, String>> modelsList =
+                    (java.util.List<java.util.Map<String, String>>) overrides.get("models");
+            java.util.List<ClaudeCliConfig.ModelConfig> newModels = new java.util.ArrayList<>();
+            for (java.util.Map<String, String> m : modelsList) {
+                ClaudeCliConfig.ModelConfig mc = new ClaudeCliConfig.ModelConfig();
+                mc.setId(m.getOrDefault("id", ""));
+                mc.setName(m.getOrDefault("name", mc.getId()));
+                mc.setProvider(m.getOrDefault("provider", "user"));
+                newModels.add(mc);
+            }
+            config.setModels(newModels);
+        }
     }
 }

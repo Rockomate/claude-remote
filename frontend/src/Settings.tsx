@@ -34,6 +34,9 @@ export default function Settings() {
       if (workDir !== config?.defaultProjectDir) data.defaultProjectDir = workDir;
       if (proxyUrl !== config?.proxyBaseUrl) data.proxyBaseUrl = proxyUrl;
       if (authToken) data.authToken = authToken;
+      if (modelIds && modelIds !== config?.models.map(m => m.id).join(', ')) {
+        data.models = modelIds.split(',').map(id => ({ id: id.trim(), name: id.trim(), provider: 'user' }));
+      }
       const r = await updateConfig(data);
       setMsg('Saved to ' + r.data.path);
       if (config) {
