@@ -155,7 +155,15 @@ export default function App() {
     let fullContent = '';
     const controller = connectChat(text, activeSessionId, modelToUse, projectDir,
       (line) => { fullContent += line + '\n'; setMessages(prev => { const u = [...prev]; if (u.length > 0) u[u.length - 1] = { role: 'assistant', content: fullContent, streaming: true }; return u; }); },
-      (err) => { setMessages(prev => [...prev, { role: 'error', content: err }]); setLoading(false); setShowCancel(false); },
+      (err) => {
+        // Enhanced error handling with retry option
+        const isNetworkError = err.includes('fetch') || err.includes('network') || err.includes('Failed');
+        const errorContent = isNetworkError
+          ? err + '\n\n[Network issue - check Tailscale connection and try again]'
+          : err;
+        setMessages(prev => [...prev, { role: 'error', content: errorContent }]);
+        setLoading(false); setShowCancel(false);
+      },
       () => { setMessages(prev => { const u = [...prev]; if (u.length > 0) u[u.length - 1] = { role: 'assistant', content: fullContent, streaming: false }; return u; }); setLoading(false); setShowCancel(false); loadSessions(); }
     );
     abortRef.current = controller;
@@ -173,6 +181,23 @@ export default function App() {
   };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } };
 
+  // Network health indicator
+  const [networkOk, setNetworkOk] = useState(true);
+  useEffect(() => {
+    const check = () => fetch('/api/config').then(() => setNetworkOk(true)).catch(() => setNetworkOk(false));
+    check();
+    const interval = setInterval(check, 30000); // Check every 30s
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleRetry = () => {
+    // Re-send the last user message
+    const lastUserMsg = [...messages].reverse().find((m: Message) => m.role === 'user');
+    if (lastUserMsg && !loading) {
+      setInput(lastUserMsg.content);
+    }
+  };
+
   // Auto-grow textarea
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -189,6 +214,7 @@ export default function App() {
           <button className="menu-btn" onClick={() => setSidebarOpen(true)}>&#9776;</button>
           <h1 style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {activeSessionId ? `Session ${activeSessionId.slice(0, 8)}` : 'New Session'}
+            {!networkOk && <span style={{ color: '#ff6b6b', marginLeft: 8, fontSize: 11 }}>[Offline]</span>}
           </h1>
           {models.length > 0 && (
             <select className="model-select" value={selectedModel} onChange={e => setSelectedModel(e.target.value)}>
