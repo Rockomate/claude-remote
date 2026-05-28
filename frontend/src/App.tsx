@@ -234,6 +234,13 @@ export default function App() {
     }
   };
 
+  // Debounced input - don't re-render on every keystroke
+  const debouncedInput = useRef(input);
+  useEffect(() => {
+    const timer = setTimeout(() => { debouncedInput.current = input; }, 150);
+    return () => clearTimeout(timer);
+  }, [input]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
