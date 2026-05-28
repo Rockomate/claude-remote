@@ -158,11 +158,13 @@ public class ConfigController {
         return null;
     }
 
-    public static String decodeProjectDir(String encodedName) {
-        // Claude Code uses "C--Users-MR-Desktop-" as prefix for known projects
-        String prefix = "C--Users-MR-Desktop-";
+    private static String decodeProjectDir(String encodedName) {
+        // Dynamically compute prefix from user home directory
+        String userHome = System.getProperty("user.home"); // e.g. C:\Users\MR
+        String prefix = userHome.replace(":", "").replace("\\", "-")
+                .replace("/", "-").replaceAll("-+", "-") + "-Desktop-";
         if (encodedName.startsWith(prefix)) {
-            return "C:\\Users\\MR\\Desktop\\" + encodedName.substring(prefix.length()).replace("-", " ");
+            return userHome + "\\Desktop\\" + encodedName.substring(prefix.length()).replace("-", " ");
         }
         return encodedName;
     }
