@@ -84,6 +84,34 @@ function Toast({ msg, onClose }: { msg: string; onClose: () => void }) {
   );
 }
 
+function ErrorBoundary({ children }: { children: React.ReactNode }) {
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const handler = (event: ErrorEvent) => setError(event.message);
+    window.addEventListener('error', handler);
+    return () => window.removeEventListener('error', handler);
+  }, []);
+  if (error) {
+    return (
+      <div style={{ padding: 32, textAlign: 'center', color: '#ff6b6b' }}>
+        <h3>Something went wrong</h3>
+        <p style={{ fontSize: 13, color: '#a0a0b0' }}>{error}</p>
+        <button onClick={() => { setError(null); window.location.reload(); }}
+          className="send-btn" style={{ marginTop: 16 }}>Reload</button>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
+function LoadingSpinner() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
+      <div className="typing-indicator"><span /><span /><span /></div>
+    </div>
+  );
+}
+
 export default function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -99,6 +127,7 @@ export default function App() {
   const [errorToast, setErrorToast] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [initializing, setInitializing] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
