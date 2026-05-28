@@ -4,7 +4,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { fetchSessions, deleteSession, fetchModels, fetchConfig, connectChat, fetchProjects, fetchSessionMessages } from './api/client';
+import { fetchSessions, deleteSession, fetchModels, fetchConfig, connectChat, fetchProjects, fetchSessionMessages, exportSession } from './api/client';
 import type { Session, Model, ProjectInfo, ChatMessageItem } from './api/client';
 
 interface Message {
@@ -42,9 +42,9 @@ function ProjectSwitcher({ projects, currentDir, onSwitch }: {
   );
 }
 
-function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, onNew, onDelete, open, onClose }: {
+function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, onNew, onDelete, onExport, open, onClose }: {
   sessions: Session[]; activeSession: string | null; search: string; onSearchChange: (v: string) => void;
-  onSelect: (id: string) => void; onNew: () => void; onDelete: (id: string) => void;
+  onSelect: (id: string) => void; onNew: () => void; onDelete: (id: string) => void; onExport: (id: string) => void;
   open: boolean; onClose: () => void;
 }) {
   const [showCount, setShowCount] = useState(50);
@@ -74,6 +74,7 @@ function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, on
               &middot; {s.updatedAt ? new Date(s.updatedAt).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
             </div>
             {s.preview && <div className="session-preview">{s.preview}</div>}
+            <button onClick={(e) => { e.stopPropagation(); onExport(s.id); }} style={{ position: 'absolute', right: 32, top: 8, background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Export">&#128228;</button>
             <button onClick={(e) => { e.stopPropagation(); if (confirm('Delete this session?')) onDelete(s.id); }} style={{ position: 'absolute', right: 8, top: 8, background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Delete">&#128465;</button>
           </div>
         ))}
@@ -229,6 +230,23 @@ export default function App() {
   const handleDeleteSession = async (id: string) => {
     try { await deleteSession(id, projectDir); loadSessions(); if (activeSessionId === id) { setActiveSessionId(null); setMessages([]); } } catch (e) { setErrorToast('Failed to delete session'); }
   };
+
+  const handleExportSession = async (id: string) => {
+    try {
+      const res = await exportSession(id, projectDir);
+      const blob = new Blob([res.data], { type: 'application/jsonl' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `session-${id.slice(0, 8)}.jsonl`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErrorToast('Failed to export session');
+    }
+  };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } };
 
   // Network health indicator
@@ -281,7 +299,7 @@ export default function App() {
   return (
     <div className="app-layout">
       <Sidebar sessions={sessions} activeSession={activeSessionId} search={searchQuery} onSearchChange={setSearchQuery}
-        onSelect={handleSelectSession} onNew={handleNewSession} onDelete={handleDeleteSession} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        onSelect={handleSelectSession} onNew={handleNewSession} onDelete={handleDeleteSession} onExport={handleExportSession} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="main-panel">
         <div className="chat-header">
           <button className="menu-btn" onClick={() => setSidebarOpen(true)}>&#9776;</button>

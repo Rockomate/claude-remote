@@ -54,4 +54,28 @@ public class SessionController {
         if (deleted) return ResponseEntity.ok().build();
         return ResponseEntity.notFound().build();
     }
+
+    @GetMapping("/export/{id}")
+    public ResponseEntity<?> exportSession(
+            @PathVariable String id,
+            @RequestParam(required = false, defaultValue = "") String projectDir) {
+        String sessionDir = sessionService.getSessionDir(projectDir);
+        if (sessionDir == null) return ResponseEntity.badRequest().body(Map.of("error", "Project dir not found"));
+
+        java.io.File jsonlFile = new java.io.File(sessionDir, id + ".jsonl");
+        if (!jsonlFile.exists()) return ResponseEntity.notFound().build();
+
+        try {
+            String content = java.nio.file.Files.readString(jsonlFile.toPath(), java.nio.charset.StandardCharsets.UTF_8);
+            Session session = sessionService.getSession(id, projectDir);
+            String name = session != null ? session.getName() : id;
+
+            return ResponseEntity.ok()
+                    .header("Content-Disposition", "attachment; filename=\"session-" + id.substring(0, 8) + ".jsonl\"")
+                    .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
+                    .body(content);
+        } catch (java.io.IOException e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to export: " + e.getMessage()));
+        }
+    }
 }

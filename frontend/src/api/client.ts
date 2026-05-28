@@ -84,6 +84,9 @@ export const deleteSession = (id: string, projectDir = '') =>
 export const fetchSessionMessages = (id: string, projectDir = '') =>
   api.get<ChatMessageItem[]>(`/sessions/${id}/messages`, { params: { projectDir } });
 
+export const exportSession = (id: string, projectDir = '') =>
+  api.get<string>(`/sessions/export/${id}`, { params: { projectDir }, responseType: 'text' });
+
 // ── Models ──
 export const fetchModels = () =>
   api.get<Model[]>('/models');
