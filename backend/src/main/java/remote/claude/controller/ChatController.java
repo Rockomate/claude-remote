@@ -77,7 +77,8 @@ public class ChatController {
                     sendEvent(emitter, "error", error);
                 },
                 () -> {
-                    sendEvent(emitter, "done", hasContent[0] ? contentBuffer.toString() : "DONE");
+                    // Send DONE signal - the actual content was already streamed via "line" events
+                    sendEvent(emitter, "done", "DONE");
                     try { emitter.complete(); } catch (Exception ignored) {}
                 }
         );
