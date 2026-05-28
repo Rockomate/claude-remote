@@ -3,17 +3,18 @@ package remote.claude.controller;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import remote.claude.config.ClaudeCliConfig;
 import remote.claude.dto.ChatRequest;
 import remote.claude.service.ClaudeCliService;
 
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -33,84 +34,99 @@ public class ChatController {
     }
 
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chat(@Valid @RequestBody ChatRequest request, HttpServletResponse response) {
-        // Disable buffering for real-time SSE streaming
-        response.setHeader("Cache-Control", "no-cache");
-        response.setHeader("X-Accel-Buffering", "no");
+    public void chat(@Valid @RequestBody ChatRequest request,
+                     HttpServletRequest httpRequest,
+                     HttpServletResponse response) throws IOException {
 
-        // Validate CLI path before attempting to run
+        // Validate CLI path
         try {
             validateClaudePath();
         } catch (Exception e) {
-            SseEmitter errorEmitter = new SseEmitter(5000L);
+            response.setContentType("text/event-stream");
+            response.setCharacterEncoding("UTF-8");
+            response.setHeader("Cache-Control", "no-cache");
             try {
-                errorEmitter.send(SseEmitter.event().name("error").data(e.getMessage()));
-                errorEmitter.send(SseEmitter.event().name("done").data("DONE"));
+                var os = response.getOutputStream();
+                os.write(("event:error\ndata:" + e.getMessage() + "\n\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                os.write("event:done\ndata:DONE\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                os.flush();
             } catch (IOException ignored) {}
-            errorEmitter.complete();
-            return errorEmitter;
+            return;
         }
 
-        SseEmitter emitter = new SseEmitter(600_000L);
+        // Set SSE headers - no buffering
+        response.setContentType("text/event-stream");
+        response.setCharacterEncoding("UTF-8");
+        response.setHeader("Cache-Control", "no-cache, no-store");
+        response.setHeader("X-Accel-Buffering", "no");
+        response.setHeader("Connection", "keep-alive");
+
+        ServletOutputStream os = response.getOutputStream();
+        // Critical: disable Nagle's algorithm on the socket
+        response.flushBuffer();
+
         String sessionId = request.getSessionId();
         String model = request.getModel();
-        // "default" or null = don't pass --model, let CLI use proxy's default
         boolean passModel = model != null && !model.isEmpty() && !"default".equals(model);
 
         StringBuilder contentBuffer = new StringBuilder();
         boolean[] hasContent = {false};
+        boolean[] finished = {false};
+        String procKey = sessionId != null ? sessionId : "chat-" + System.currentTimeMillis();
 
         Process process = claudeService.runCommand(
                 request.getPrompt(),
                 sessionId,
                 passModel ? model : null,
                 request.getProjectDir(),
-                // onLine — combine all output as the final result
                 line -> {
-                    // Skip warning lines about stdin
                     if (line.contains("Warning: no stdin data received")) return;
                     if (line.startsWith("API Error") || line.contains("API Error")) {
-                        sendEvent(emitter, "error", line);
+                        safeWrite(os, "error", line);
                         return;
                     }
                     hasContent[0] = true;
                     contentBuffer.append(line).append("\n");
-                    sendEvent(emitter, "line", line);
+                    safeWrite(os, "line", line);
                 },
                 error -> {
                     if (error.contains("Warning:")) return;
-                    sendEvent(emitter, "error", error);
+                    safeWrite(os, "error", error);
                 },
                 () -> {
-                    // Send DONE signal - the actual content was already streamed via "line" events
-                    sendEvent(emitter, "done", "DONE");
-                    try { emitter.complete(); } catch (Exception ignored) {}
+                    finished[0] = true;
+                    safeWrite(os, "done", "DONE");
+                    activeProcesses.remove(procKey);
                 }
         );
 
         if (process != null) {
-            String procKey = sessionId != null ? sessionId : "chat-" + System.currentTimeMillis();
             activeProcesses.put(procKey, process);
-            emitter.onCompletion(() -> {
+            try {
+                process.waitFor();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 process.destroyForcibly();
-                activeProcesses.remove(procKey);
-            });
-            emitter.onTimeout(() -> {
-                process.destroyForcibly();
-                activeProcesses.remove(procKey);
-            });
+            }
         } else {
-            sendEvent(emitter, "error", "Failed to start Claude process");
-            sendEvent(emitter, "done", "DONE");
-            try { emitter.complete(); } catch (Exception ignored) {}
+            safeWrite(os, "error", "Failed to start Claude process");
+            safeWrite(os, "done", "DONE");
         }
+    }
 
-        return emitter;
+    private void safeWrite(ServletOutputStream os, String event, String data) {
+        try {
+            String frame = "event:" + event + "\ndata:" + (data != null ? data : "") + "\n\n";
+            os.write(frame.getBytes(StandardCharsets.UTF_8));
+            os.flush();
+        } catch (IOException e) {
+            // Client disconnected
+            log.debug("SSE write failed (client disconnected): {}", e.getMessage());
+        }
     }
 
     @PostMapping("/chat/cancel")
     public ResponseEntity<Void> cancelChat(@RequestParam(required = false) String sessionId) {
-        // Try exact match first, then prefix scan (for timestamp-keyed processes)
         if (sessionId != null) {
             Process process = activeProcesses.remove(sessionId);
             if (process != null && process.isAlive()) {
@@ -118,28 +134,11 @@ public class ChatController {
                 return ResponseEntity.ok().build();
             }
         }
-        // Destroy all active processes if no specific sessionId
         activeProcesses.values().forEach(p -> { if (p.isAlive()) p.destroyForcibly(); });
         activeProcesses.clear();
         return ResponseEntity.ok().build();
     }
 
-    private void sendEvent(SseEmitter emitter, String event, String data) {
-        try {
-            emitter.send(SseEmitter.event()
-                    .name(event)
-                    .data(data != null ? data : ""));
-            // Note: Spring Boot SseEmitter auto-flushes on each send()
-            // If streaming is still buffered, the issue is likely client-side
-        } catch (IOException e) {
-            // Client disconnected — try to complete the emitter
-            try { emitter.complete(); } catch (Exception ignored) {}
-        }
-    }
-
-    /**
-     * Validate and return the CLI binary path. Returns null if not found.
-     */
     private void validateClaudePath() {
         String path = config.getClaudePath();
         if (path == null || path.isEmpty()) {
