@@ -173,16 +173,22 @@ public class SessionService {
         }
 
         // Case 2: content is array of blocks: "content":[{"type":"text","text":"..."}]
+        // Extract ALL text blocks, not just the first one
         if (after.startsWith("[")) {
-            int textIdx = after.indexOf("\"text\":\"");
-            if (textIdx < 0) return null;
-            int t1 = textIdx + 8;
             StringBuilder sb = new StringBuilder();
-            for (int i = t1; i < after.length(); i++) {
-                char c = after.charAt(i);
-                if (c == '\\') { sb.append(after.charAt(++i)); continue; }
-                if (c == '"') break;
-                sb.append(c);
+            int searchFrom = 0;
+            while (searchFrom < after.length()) {
+                int textIdx = after.indexOf("\"text\":\"", searchFrom);
+                if (textIdx < 0) break;
+                int t1 = textIdx + 8;
+                for (int i = t1; i < after.length(); i++) {
+                    char c = after.charAt(i);
+                    if (c == '\\') { sb.append(after.charAt(++i)); continue; }
+                    if (c == '"') break;
+                    sb.append(c);
+                }
+                sb.append("\n");
+                searchFrom = textIdx + 8;
             }
             return sb.toString().trim();
         }
