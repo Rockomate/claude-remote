@@ -135,7 +135,6 @@ export default function App() {
   const [errorToast, setErrorToast] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [initializing, setInitializing] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -235,13 +234,6 @@ export default function App() {
       setInput(lastUserMsg.content);
     }
   };
-
-  // Debounced input - don't re-render on every keystroke
-  const debouncedInput = useRef(input);
-  useEffect(() => {
-    const timer = setTimeout(() => { debouncedInput.current = input; }, 150);
-    return () => clearTimeout(timer);
-  }, [input]);
 
   // Keyboard shortcuts
   useEffect(() => {

@@ -3,6 +3,7 @@ package remote.claude.controller;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -32,7 +33,11 @@ public class ChatController {
     }
 
     @PostMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chat(@Valid @RequestBody ChatRequest request) {
+    public SseEmitter chat(@Valid @RequestBody ChatRequest request, HttpServletResponse response) {
+        // Disable buffering for real-time SSE streaming
+        response.setHeader("Cache-Control", "no-cache");
+        response.setHeader("X-Accel-Buffering", "no");
+
         // Validate CLI path before attempting to run
         try {
             validateClaudePath();
@@ -124,6 +129,8 @@ public class ChatController {
             emitter.send(SseEmitter.event()
                     .name(event)
                     .data(data != null ? data : ""));
+            // Note: Spring Boot SseEmitter auto-flushes on each send()
+            // If streaming is still buffered, the issue is likely client-side
         } catch (IOException e) {
             // Client disconnected — try to complete the emitter
             try { emitter.complete(); } catch (Exception ignored) {}

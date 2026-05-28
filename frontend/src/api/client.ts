@@ -154,14 +154,25 @@ export function connectChat(
       const { done, value } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop() || '';
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('event: ')) continue;
-        if (trimmed.startsWith('data: ')) {
-          const data = trimmed.slice(6);
-          if (data === 'DONE') continue;
+      // Process complete SSE frames (separated by \n\n)
+      const frames = buf.split('\n\n');
+      buf = frames.pop() || '';
+      for (const frame of frames) {
+        if (!frame.trim()) continue;
+        const lines = frame.split('\n');
+        let eventType = '';
+        let data = '';
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            data = line.slice(5).trim();
+          }
+        }
+        if (eventType === 'done' || data === 'DONE') {
+          continue; // Skip done signal
+        }
+        if (data) {
           onLine(data);
         }
       }
