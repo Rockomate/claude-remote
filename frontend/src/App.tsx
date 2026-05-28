@@ -69,6 +69,7 @@ function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, on
             <div className="session-name">{s.name}</div>
             <div className="session-meta">{s.messageCount} msgs &middot; {s.updatedAt?.slice(0, 10)}</div>
             {s.preview && <div className="session-preview">{s.preview}</div>}
+            <button onClick={(e) => { e.stopPropagation(); if (confirm('Delete this session?')) onDelete(s.id); }} style={{ position: 'absolute', right: 8, top: 8, background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Delete">&#128465;</button>
           </div>
         ))}
         {filtered.length > showCount && (
@@ -157,6 +158,7 @@ export default function App() {
   useEffect(() => { loadSessions(); }, [loadSessions]);
 
   const switchProject = (dir: string) => {
+    if (messages.length > 0 && !confirm('Switch project? Current chat will be cleared.')) return;
     setProjectDir(dir);
     setActiveSessionId(null);
     setMessages([]);
