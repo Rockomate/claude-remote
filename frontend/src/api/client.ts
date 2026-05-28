@@ -53,6 +53,15 @@ export interface ChatMessageItem {
   timestamp: string | null;
 }
 
+// ── Logging utility ──
+const log = (level: 'info' | 'warn' | 'error', msg: string, data?: unknown) => {
+  const ts = new Date().toISOString();
+  const prefix = `[${ts}] [${level.toUpperCase()}]`;
+  if (level === 'error') console.error(prefix, msg, data);
+  else if (level === 'warn') console.warn(prefix, msg, data);
+  else console.log(prefix, msg, data);
+};
+
 // ── Sessions ──
 export const fetchSessions = (projectDir = '') =>
   api.get<Session[]>('/sessions', { params: { projectDir } });
@@ -91,7 +100,7 @@ export const uploadFile = (file: File, dir = '') => {
   return api.post('/files/upload', fd);
 };
 
-// ── Chat SSE ──
+// ── Chat SSE with logging ──
 export function connectChat(
   prompt: string,
   sessionId: string | null,
@@ -102,8 +111,10 @@ export function connectChat(
   onDone: () => void,
   timeoutMs = 120000
 ): AbortController {
+  log('info', `Chat: model=${model || 'default'}, session=${sessionId || 'new'}, dir=${projectDir || 'default'}`);
   const ctrl = new AbortController();
   const timeout = setTimeout(() => {
+    log('error', 'Chat timeout after', timeoutMs + 'ms');
     ctrl.abort();
     onError('Request timed out');
     onDone();
@@ -116,7 +127,13 @@ export function connectChat(
     signal: ctrl.signal,
   }).then(async (res) => {
     clearTimeout(timeout);
-    if (!res.ok) { onError('HTTP ' + res.status); onDone(); return; }
+    if (!res.ok) {
+      const errText = await res.text().catch(() => 'Unknown error');
+      log('error', `Chat HTTP ${res.status}:`, errText);
+      onError(`HTTP ${res.status}: ${errText}`);
+      onDone();
+      return;
+    }
     const reader = res.body?.getReader();
     if (!reader) { onError('No stream'); onDone(); return; }
     const dec = new TextDecoder();
@@ -140,6 +157,7 @@ export function connectChat(
     onDone();
   }).catch((err) => {
     clearTimeout(timeout);
+    log('error', 'Chat catch:', err.message);
     if (err.name !== 'AbortError') onError(err.message);
     onDone();
   });
