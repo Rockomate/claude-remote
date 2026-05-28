@@ -87,6 +87,13 @@ export const fetchSessionMessages = (id: string, projectDir = '') =>
 export const exportSession = (id: string, projectDir = '') =>
   api.get<string>(`/sessions/export/${id}`, { params: { projectDir }, responseType: 'text' });
 
+export const importSession = (file: File, projectDir = '') => {
+  const fd = new FormData();
+  fd.append('file', file);
+  if (projectDir) fd.append('projectDir', projectDir);
+  return api.post<{ id: string; name: string; path: string }>('/sessions/import', fd);
+};
+
 // ── Models ──
 export const fetchModels = () =>
   api.get<Model[]>('/models');

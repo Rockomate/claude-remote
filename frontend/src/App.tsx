@@ -4,7 +4,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { fetchSessions, deleteSession, fetchModels, fetchConfig, connectChat, fetchProjects, fetchSessionMessages, exportSession } from './api/client';
+import { fetchSessions, deleteSession, fetchModels, fetchConfig, connectChat, fetchProjects, fetchSessionMessages, exportSession, importSession } from './api/client';
 import type { Session, Model, ProjectInfo, ChatMessageItem } from './api/client';
 
 interface Message {
@@ -42,9 +42,9 @@ function ProjectSwitcher({ projects, currentDir, onSwitch }: {
   );
 }
 
-function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, onNew, onDelete, onExport, open, onClose }: {
+function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, onNew, onDelete, onExport, onImport, open, onClose }: {
   sessions: Session[]; activeSession: string | null; search: string; onSearchChange: (v: string) => void;
-  onSelect: (id: string) => void; onNew: () => void; onDelete: (id: string) => void; onExport: (id: string) => void;
+  onSelect: (id: string) => void; onNew: () => void; onDelete: (id: string) => void; onExport: (id: string) => void; onImport: () => void;
   open: boolean; onClose: () => void;
 }) {
   const [showCount, setShowCount] = useState(50);
@@ -62,6 +62,9 @@ function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, on
           style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #2a2a4a', background: '#1a1a2e', color: '#e0e0e0', fontSize: 13, outline: 'none' }} />
       </div>
       <button className="new-session-btn" onClick={() => { onNew(); onClose(); }}>+ New Session</button>
+      <button onClick={onImport} style={{ width: 'calc(100% - 16px)', margin: '0 8px 8px', padding: '8px', background: '#0f3460', color: '#e0e0e0', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
+        + Import Session
+      </button>
       <div className="sidebar-sessions">
         {displaySessions.length === 0 && <div style={{ color: '#666', textAlign: 'center', padding: 24, fontSize: 13 }}>{search ? 'No matching sessions' : 'No sessions'}</div>}
         {displaySessions.map(s => (
@@ -249,6 +252,24 @@ export default function App() {
   };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } };
 
+  const handleImportSession = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.jsonl';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const res = await importSession(file, projectDir);
+        setErrorToast('Imported: ' + (res.data.name || 'session'));
+        loadSessions();
+      } catch (e) {
+        setErrorToast('Failed to import session');
+      }
+    };
+    input.click();
+  };
+
   // Network health indicator
   const [networkOk, setNetworkOk] = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('claude-remote-theme') || 'dark');
@@ -299,7 +320,7 @@ export default function App() {
   return (
     <div className="app-layout">
       <Sidebar sessions={sessions} activeSession={activeSessionId} search={searchQuery} onSearchChange={setSearchQuery}
-        onSelect={handleSelectSession} onNew={handleNewSession} onDelete={handleDeleteSession} onExport={handleExportSession} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        onSelect={handleSelectSession} onNew={handleNewSession} onDelete={handleDeleteSession} onExport={handleExportSession} onImport={handleImportSession} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="main-panel">
         <div className="chat-header">
           <button className="menu-btn" onClick={() => setSidebarOpen(true)}>&#9776;</button>
