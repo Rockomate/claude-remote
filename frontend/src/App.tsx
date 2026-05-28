@@ -234,6 +234,24 @@ export default function App() {
     }
   };
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Ctrl+Enter or Cmd+Enter to send
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleSend();
+      }
+      // Escape to cancel or close sidebar
+      if (e.key === 'Escape') {
+        if (sidebarOpen) setSidebarOpen(false);
+        else if (loading) handleCancel();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [loading, sidebarOpen, handleSend, handleCancel]);
+
   // Auto-grow textarea
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
