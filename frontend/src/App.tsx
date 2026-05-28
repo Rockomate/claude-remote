@@ -190,20 +190,28 @@ export default function App() {
     const modelToUse = selectedModel || models[0]?.id;
     setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '', streaming: true }]);
     let fullContent = '';
-    const controller = connectChat(text, activeSessionId, modelToUse, projectDir,
-      (line) => { fullContent += line + '\n'; setMessages(prev => { const u = [...prev]; if (u.length > 0) u[u.length - 1] = { role: 'assistant', content: fullContent, streaming: true }; return u; }); },
-      (err) => {
-        // Enhanced error handling with retry option
-        const isNetworkError = err.includes('fetch') || err.includes('network') || err.includes('Failed');
-        const errorContent = isNetworkError
-          ? err + '\n\n[Network issue - check Tailscale connection and try again]'
-          : err;
-        setMessages(prev => [...prev, { role: 'error', content: errorContent }]);
-        setLoading(false); setShowCancel(false);
-      },
-      () => { setMessages(prev => { const u = [...prev]; if (u.length > 0) u[u.length - 1] = { role: 'assistant', content: fullContent, streaming: false }; return u; }); setLoading(false); setShowCancel(false); loadSessions(); }
-    );
-    abortRef.current = controller;
+    let retryCount = 0;
+    const maxRetries = 2;
+
+    const attempt = () => {
+      const controller = connectChat(text, activeSessionId, modelToUse, projectDir,
+        (line) => { fullContent += line + '\n'; setMessages(prev => { const u = [...prev]; if (u.length > 0) u[u.length - 1] = { role: 'assistant', content: fullContent, streaming: true }; return u; }); },
+        (err) => {
+          if (retryCount < maxRetries && (err.includes('timeout') || err.includes('Timeout') || err.includes('fetch'))) {
+            retryCount++;
+            setTimeout(attempt, 2000);
+          } else {
+            const errorContent = err + (retryCount > 0 ? ` (after ${retryCount} retries)` : '');
+            setMessages(prev => [...prev, { role: 'error', content: errorContent }]);
+            setErrorToast('Chat failed: ' + err.slice(0, 80));
+            setLoading(false); setShowCancel(false);
+          }
+        },
+        () => { setMessages(prev => { const u = [...prev]; if (u.length > 0) u[u.length - 1] = { role: 'assistant', content: fullContent, streaming: false }; return u; }); setLoading(false); setShowCancel(false); loadSessions(); }
+      );
+      abortRef.current = controller;
+    };
+    attempt();
   };
 
   const handleCancel = () => {
