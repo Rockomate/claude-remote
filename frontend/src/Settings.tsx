@@ -11,7 +11,6 @@ export default function Settings() {
   const [workDir, setWorkDir] = useState('');
   const [proxyUrl, setProxyUrl] = useState('');
   const [authToken, setAuthToken] = useState('');
-  const [modelIds, setModelIds] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -20,7 +19,6 @@ export default function Settings() {
       setConfig(r.data);
       setWorkDir(r.data.defaultProjectDir);
       setProxyUrl(r.data.proxyBaseUrl || '');
-      setModelIds(r.data.models.map(m => m.id).join(', '));
     });
     fetchProjects().then(r => setProjects(r.data));
     fetchModels().then(r => setProxyModels(r.data));
@@ -34,9 +32,6 @@ export default function Settings() {
       if (workDir !== config?.defaultProjectDir) data.defaultProjectDir = workDir;
       if (proxyUrl !== config?.proxyBaseUrl) data.proxyBaseUrl = proxyUrl;
       if (authToken) data.authToken = authToken;
-      if (modelIds && modelIds !== config?.models.map(m => m.id).join(', ')) {
-        data.models = modelIds.split(',').map(id => ({ id: id.trim(), name: id.trim(), provider: 'user' }));
-      }
       const r = await updateConfig(data);
       setMsg('Saved to ' + r.data.path);
       if (config) {
@@ -86,18 +81,14 @@ export default function Settings() {
           </div>
 
           <div className="config-field" style={{ marginBottom: 20 }}>
-            <label>Model IDs (comma separated, edit application.yml to persist)</label>
-            <input value={modelIds} onChange={e => setModelIds(e.target.value)} placeholder="claude-haiku-4-5, claude-sonnet-4-6-r2" style={{ background: '#1a1a2e', border: '1px solid #2a2a4a', color: '#e0e0e0', padding: 10, borderRadius: 8, fontSize: 14, width: '100%' }} />
-          </div>
-
-          <div className="config-field" style={{ marginBottom: 20 }}>
-            <label>Available Models (from proxy API)</label>
+            <label>Available Models (auto-detected from proxy)</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
               {proxyModels.map(m => (
                 <span key={m.id} style={{ background: '#0f3460', padding: '6px 12px', borderRadius: 16, fontSize: 12, color: '#a0a0b0' }}>{m.name || m.id}</span>
               ))}
               {proxyModels.length === 0 && <span style={{ color: '#666', fontSize: 13 }}>Run backend to auto-detect</span>}
             </div>
+            <p style={{ color: '#666', fontSize: 11, marginTop: 4 }}>Models are automatically detected from your API proxy. No manual configuration needed.</p>
           </div>
 
           <button onClick={handleSave} disabled={saving} className="send-btn" style={{ width: '100%', padding: 12 }}>

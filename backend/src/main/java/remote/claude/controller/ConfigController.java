@@ -29,15 +29,21 @@ public class ConfigController {
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getConfig() {
+        // Return runtime config including proxy-detected models
+        List<Map<String, String>> runtimeModels = new ArrayList<>();
+        for (ClaudeCliConfig.ModelConfig m : config.getModels()) {
+            runtimeModels.add(Map.of(
+                    "id", m.getId(),
+                    "name", m.getName(),
+                    "provider", m.getProvider() != null ? m.getProvider() : "unknown"
+            ));
+        }
         return ResponseEntity.ok(Map.of(
                 "claudePath", config.getClaudePath(),
                 "defaultProjectDir", config.getDefaultProjectDir(),
                 "proxyBaseUrl", config.getProxyBaseUrl(),
-                "models", config.getModels().stream().map(m -> Map.of(
-                        "id", m.getId(),
-                        "name", m.getName(),
-                        "provider", m.getProvider()
-                )).toList()
+                "models", runtimeModels,
+                "overrideConfigFile", config.getOverrideConfigFile() != null ? config.getOverrideConfigFile() : ""
         ));
     }
 

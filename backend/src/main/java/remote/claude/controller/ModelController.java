@@ -35,7 +35,7 @@ public class ModelController {
         result.add(Map.of("id", "default", "name", "Auto (proxy default)", "provider", "system"));
 
         // Add all proxy-reported models
-        if (remoteModels != null) {
+        if (remoteModels != null && !remoteModels.isEmpty()) {
             for (Map<String, String> rm : remoteModels) {
                 String id = rm.get("id");
                 if (id != null && !id.isEmpty()) {
