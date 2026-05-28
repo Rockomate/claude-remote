@@ -45,12 +45,14 @@ function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, on
   onSelect: (id: string) => void; onNew: () => void; onDelete: (id: string) => void;
   open: boolean; onClose: () => void;
 }) {
+  const [showCount, setShowCount] = useState(50);
   const filtered = search ? sessions.filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || s.preview?.toLowerCase().includes(search.toLowerCase())) : sessions;
+  const displaySessions = filtered.slice(0, showCount);
   return (<>
     <div className={`sidebar-overlay ${open ? 'open' : ''}`} onClick={onClose} />
     <div className={`sidebar ${open ? 'mobile-open' : ''}`}>
       <div className="sidebar-header">
-        <h2>Sessions</h2>
+        <h2>Sessions ({filtered.length})</h2>
         <button className="close-btn" onClick={onClose}>&times;</button>
       </div>
       <div style={{ padding: '8px' }}>
@@ -59,8 +61,8 @@ function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, on
       </div>
       <button className="new-session-btn" onClick={() => { onNew(); onClose(); }}>+ New Session</button>
       <div className="sidebar-sessions">
-        {filtered.length === 0 && <div style={{ color: '#666', textAlign: 'center', padding: 24, fontSize: 13 }}>{search ? 'No matching sessions' : 'No sessions'}</div>}
-        {filtered.map(s => (
+        {displaySessions.length === 0 && <div style={{ color: '#666', textAlign: 'center', padding: 24, fontSize: 13 }}>{search ? 'No matching sessions' : 'No sessions'}</div>}
+        {displaySessions.map(s => (
           <div key={s.id} className={`session-item ${s.id === activeSession ? 'active' : ''}`}
             onClick={() => { onSelect(s.id); onClose(); }}
             onContextMenu={(e) => { e.preventDefault(); if (confirm('Delete this session?')) onDelete(s.id); }}>
@@ -69,6 +71,11 @@ function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, on
             {s.preview && <div className="session-preview">{s.preview}</div>}
           </div>
         ))}
+        {filtered.length > showCount && (
+          <button onClick={() => setShowCount(prev => prev + 50)} style={{ width: '100%', padding: '10px', background: 'transparent', border: '1px dashed #2a2a4a', color: '#a0a0b0', borderRadius: 8, cursor: 'pointer', marginTop: 4, fontSize: 12 }}>
+            Show more ({filtered.length - showCount} remaining)
+          </button>
+        )}
       </div>
     </div>
   </>);
