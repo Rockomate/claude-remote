@@ -26,20 +26,18 @@ public class SessionService {
     public String getSessionDir(String projectDir) {
         if (projectDir == null || projectDir.isEmpty()) return null;
 
-        String sessionStorage = findSessionDirByCwd(projectDir);
-        if (sessionStorage != null) return sessionStorage;
-
-        // Fallback: compute sanitized name (works for ASCII paths, C: drive)
+        // Direct computation - Claude Code sanitizes: ":" → "-", "\" → "-", "/" → "-"
+        // Do NOT collapse consecutive dashes - "C:\Users" becomes "C--Users" (double dash)
         String sanitized = projectDir
-                .replace(":", "")
+                .replace(":", "-")
                 .replace("\\", "-")
                 .replace("/", "-")
-                .replaceAll("[^a-zA-Z0-9-]", "-")
-                .replaceAll("-+", "-")
-                .replaceAll("^-|-$", "");
+                .replaceAll("^-+|-+$", "");
 
         String userHome = System.getProperty("user.home");
-        return userHome + "\\.claude\\projects\\" + sanitized;
+        String result = userHome + "\\.claude\\projects\\" + sanitized;
+        log.debug("Session dir for {}: {}", projectDir, result);
+        return result;
     }
 
     /**
@@ -91,10 +89,16 @@ public class SessionService {
         if (files == null) return Collections.emptyList();
 
         List<Session> sessions = new ArrayList<>();
+        int total = files.length;
+        int parsed = 0;
         for (File f : files) {
             Session session = parseSessionFile(f);
-            if (session != null) sessions.add(session);
+            if (session != null) {
+                sessions.add(session);
+                parsed++;
+            }
         }
+        log.info("Session scan: {}/{} parsed from {}", parsed, total, sessionDir);
 
         // Sort by updatedAt descending
         sessions.sort((a, b) -> b.getUpdatedAt().compareTo(a.getUpdatedAt()));
@@ -209,6 +213,8 @@ public class SessionService {
     private Session parseSessionFile(File file) {
         try {
             String sessionId = file.getName().replace(".jsonl", "");
+            if (sessionId.length() < 8) return null;
+
             Session session = new Session();
             session.setId(sessionId);
             session.setProjectDir(file.getParentFile().getName());
@@ -220,65 +226,91 @@ public class SessionService {
                     ZoneId.systemDefault()));
             session.setCreatedAt(session.getUpdatedAt());
 
-            // Parse JSONL to extract name, messages, count and preview
-            List<String> lines = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
+            // Read only first 32KB to avoid OOM on large JSONL files
+            // This is enough to extract title, first user message, and message count
+            int maxBytes = 32768;
+            byte[] buffer = new byte[maxBytes];
+            int bytesRead;
+            try (var raf = new RandomAccessFile(file, "r")) {
+                bytesRead = raf.read(buffer, 0, maxBytes);
+            }
+            if (bytesRead <= 0) return session;
+
+            String chunk = new String(buffer, 0, bytesRead, StandardCharsets.UTF_8);
+            String[] lines = chunk.split("\n");
+
             int msgCount = 0;
-            StringBuilder preview = new StringBuilder();
+            String preview = null;
             String customTitle = null;
             boolean titleFound = false;
 
             for (String line : lines) {
-                // Extract custom title (last occurrence = current name)
+                if (line.isEmpty()) continue;
+
                 if (!titleFound && line.contains("\"type\":\"custom-title\"")) {
-                    // Next line or same line has the content
-                    int ci = line.indexOf("\"custom-title\"");
-                    // The title content could be in the next JSON object
-                    titleFound = true; // Mark to find the actual title text
+                    titleFound = true;
                 }
                 if (titleFound && customTitle == null) {
-                    // Try to extract title from quotes in content field
-                    int ci = line.indexOf("\"content\"");
-                    if (ci >= 0) {
-                        int q1 = line.indexOf('"', ci + 10);
-                        if (q1 >= 0) {
-                            int q2 = line.indexOf('"', q1 + 1);
-                            if (q2 >= 0) {
-                                customTitle = line.substring(q1 + 1, q2);
-                                if (customTitle.length() > 60) customTitle = customTitle.substring(0, 60);
-                            }
-                        }
+                    String extracted = extractJsonField(line, "content");
+                    if (extracted != null) {
+                        customTitle = extracted.length() > 60 ? extracted.substring(0, 60) : extracted;
                     }
                 }
 
                 if (line.contains("\"role\":\"user\"") || line.contains("\"type\":\"message\"")) {
                     msgCount++;
                 }
-                // Extract content preview from first user message
-                if (msgCount == 1 && preview.isEmpty() && line.contains("\"content\"")) {
-                    int idx = line.indexOf("\"content\"");
-                    String snippet = line.substring(Math.min(idx + 30, line.length()));
-                    snippet = snippet.replaceAll("[\\n\\r]", " ").trim();
-                    if (snippet.length() > 200) snippet = snippet.substring(0, 200) + "...";
-                    preview.append(snippet);
+
+                if (msgCount == 1 && preview == null && line.contains("\"role\":\"user\"")) {
+                    String content = extractJsonField(line, "content");
+                    if (content != null) {
+                        preview = content.replaceAll("[\\n\\r]", " ").trim();
+                        if (preview.length() > 200) preview = preview.substring(0, 200) + "...";
+                    }
                 }
             }
 
-            // Use custom title if found, otherwise first 30 chars of preview
             if (customTitle != null && !customTitle.isEmpty()) {
                 session.setName(customTitle);
-            } else if (preview.length() > 0) {
-                String nameFromPreview = preview.toString().replaceAll("[\\n\\r]", " ").trim();
-                if (nameFromPreview.length() > 40) nameFromPreview = nameFromPreview.substring(0, 40) + "...";
-                session.setName(nameFromPreview);
+            } else if (preview != null && !preview.isEmpty()) {
+                String name = preview.length() > 40 ? preview.substring(0, 40) + "..." : preview;
+                session.setName(name);
             }
 
             session.setMessageCount(msgCount);
-            session.setPreview(preview.length() > 0 ? preview.toString() : null);
-
+            session.setPreview(preview);
             return session;
-        } catch (IOException e) {
-            log.warn("Failed to parse session file: {}", file.getName(), e);
+
+        } catch (Exception e) {
+            log.debug("Failed to parse session {}: {}", file.getName(), e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Quick JSON field extraction without full parser.
+     * Returns value of "field":"value" from a JSON line.
+     */
+    private String extractJsonField(String json, String field) {
+        String search = "\"" + field + "\":";
+        int idx = json.indexOf(search);
+        if (idx < 0) return null;
+        int start = idx + search.length();
+        // Skip whitespace
+        while (start < json.length() && json.charAt(start) == ' ') start++;
+        if (start >= json.length()) return null;
+        if (json.charAt(start) == '"') {
+            // String value
+            start++;
+            StringBuilder sb = new StringBuilder();
+            for (int i = start; i < json.length(); i++) {
+                char c = json.charAt(i);
+                if (c == '\\') { i++; continue; }
+                if (c == '"') break;
+                sb.append(c);
+            }
+            return sb.toString();
+        }
+        return null;
     }
 }
