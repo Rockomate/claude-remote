@@ -233,6 +233,11 @@ export default function App() {
 
   // Network health indicator
   const [networkOk, setNetworkOk] = useState(true);
+  const [theme, setTheme] = useState(() => localStorage.getItem('claude-remote-theme') || 'dark');
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('claude-remote-theme', theme);
+  }, [theme]);
   useEffect(() => {
     const check = () => fetch('/api/config').then(() => setNetworkOk(true)).catch(() => setNetworkOk(false));
     check();
@@ -291,6 +296,9 @@ export default function App() {
           )}
           <ProjectSwitcher projects={projects} currentDir={projectDir} onSwitch={switchProject} />
           <button className="icon-btn" onClick={() => setMessages([])} title="Clear chat" style={{ fontSize: 14 }}>&#128465;</button>
+          <button className="icon-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} style={{ fontSize: 14 }}>
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
           <Link to="/settings" className="icon-btn" style={{ textDecoration: 'none' }} title="Settings">&#9881;</Link>
         </div>
         <div className="message-list">

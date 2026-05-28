@@ -14,6 +14,19 @@
   --sidebar-width: 280px;
 }
 
+:root[data-theme="light"] {
+  --bg-primary: #f8f9fa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #e9ecef;
+  --accent: #e94560;
+  --text-primary: #212529;
+  --text-secondary: #495057;
+  --text-muted: #868e96;
+  --border: #dee2e6;
+  --success: #198754;
+  --error: #dc3545;
+}
+
 html, body, #root {
   height: 100%;
   overflow: hidden;
