@@ -27,34 +27,37 @@ public class ModelController {
 
     @GetMapping
     public ResponseEntity<List<Map<String, String>>> listModels() {
+        // Always auto-detect from proxy first
         List<Map<String, String>> remoteModels = fetchFromProxy();
+        List<Map<String, String>> result = new ArrayList<>();
 
-        // Merge: only return models that appear in BOTH proxy and config
-        List<Map<String, String>> merged = new ArrayList<>();
-        if (remoteModels != null && !remoteModels.isEmpty()) {
-            Set<String> configModelIds = config.getModels().stream()
-                    .map(ClaudeCliConfig.ModelConfig::getId)
-                    .collect(java.util.stream.Collectors.toSet());
+        // First option: "default" = don't pass --model, let CLI/proxy decide
+        result.add(Map.of("id", "default", "name", "Auto (proxy default)", "provider", "system"));
+
+        // Add all proxy-reported models
+        if (remoteModels != null) {
             for (Map<String, String> rm : remoteModels) {
                 String id = rm.get("id");
-                if (configModelIds.contains(id)) {
-                    merged.add(rm);
+                if (id != null && !id.isEmpty()) {
+                    result.add(Map.of(
+                            "id", id,
+                            "name", id,
+                            "provider", rm.getOrDefault("provider", "proxy")
+                    ));
                 }
+            }
+        } else {
+            // Fallback: return config models
+            for (ClaudeCliConfig.ModelConfig m : config.getModels()) {
+                result.add(Map.of(
+                        "id", m.getId(),
+                        "name", m.getName() != null ? m.getName() : m.getId(),
+                        "provider", m.getProvider() != null ? m.getProvider() : "unknown"
+                ));
             }
         }
 
-        if (merged.isEmpty()) {
-            // Fallback: only return config models (trust the YAML)
-            return ResponseEntity.ok(config.getModels().stream()
-                    .map(m -> Map.<String, String>of(
-                            "id", m.getId(),
-                            "name", m.getName(),
-                            "provider", m.getProvider() != null ? m.getProvider() : "unknown"
-                    ))
-                    .toList());
-        }
-
-        return ResponseEntity.ok(merged);
+        return ResponseEntity.ok(result);
     }
 
     /**

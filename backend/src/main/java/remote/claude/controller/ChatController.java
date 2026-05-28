@@ -49,13 +49,8 @@ public class ChatController {
         SseEmitter emitter = new SseEmitter(600_000L);
         String sessionId = request.getSessionId();
         String model = request.getModel();
-        if (model == null || model.isEmpty()) {
-            List<ClaudeCliConfig.ModelConfig> models = config.getModels();
-            if (!models.isEmpty()) {
-                model = models.get(0).getId();
-            }
-        }
-        // Only pass --model if explicitly requested; otherwise let CLI use its default
+        // "default" or null = don't pass --model, let CLI use proxy's default
+        boolean passModel = model != null && !model.isEmpty() && !"default".equals(model);
 
         StringBuilder contentBuffer = new StringBuilder();
         boolean[] hasContent = {false};
@@ -63,7 +58,7 @@ public class ChatController {
         Process process = claudeService.runCommand(
                 request.getPrompt(),
                 sessionId,
-                model,
+                passModel ? model : null,
                 request.getProjectDir(),
                 // onLine — combine all output as the final result
                 line -> {
