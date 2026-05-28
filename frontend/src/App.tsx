@@ -67,7 +67,10 @@ function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, on
             onClick={() => { onSelect(s.id); onClose(); }}
             onContextMenu={(e) => { e.preventDefault(); if (confirm('Delete this session?')) onDelete(s.id); }}>
             <div className="session-name">{s.name}</div>
-            <div className="session-meta">{s.messageCount} msgs &middot; {s.updatedAt?.slice(0, 10)}</div>
+            <div className="session-meta">
+              <span style={{ color: '#e94560', fontWeight: 600, fontSize: 12 }}>{s.messageCount}</span> msgs
+              &middot; {s.updatedAt ? new Date(s.updatedAt).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+            </div>
             {s.preview && <div className="session-preview">{s.preview}</div>}
             <button onClick={(e) => { e.stopPropagation(); if (confirm('Delete this session?')) onDelete(s.id); }} style={{ position: 'absolute', right: 8, top: 8, background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Delete">&#128465;</button>
           </div>
@@ -296,6 +299,13 @@ export default function App() {
               <div style={{ fontSize: 40, marginBottom: 8 }}>&#9670;</div>
               <div>Claude Remote</div>
               <div style={{ fontSize: 12 }}>Type a message or select a session</div>
+              <div style={{ fontSize: 11, color: '#666', marginTop: 16 }}>
+                <span style={{ background: '#0f3460', padding: '2px 6px', borderRadius: 4, marginRight: 4 }}>Ctrl+Enter</span> send
+                &nbsp;&middot;&nbsp;
+                <span style={{ background: '#0f3460', padding: '2px 6px', borderRadius: 4, marginRight: 4 }}>Esc</span> cancel/close
+                &nbsp;&middot;&nbsp;
+                <span style={{ background: '#0f3460', padding: '2px 6px', borderRadius: 4, marginRight: 4 }}>&#9776;</span> sessions
+              </div>
             </div>
           ) : messages.map((m, i) =>
               <div key={i} className={`message ${m.role} ${m.streaming ? 'streaming' : ''}`}>
