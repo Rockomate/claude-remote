@@ -42,9 +42,10 @@ function ProjectSwitcher({ projects, currentDir, onSwitch }: {
   );
 }
 
-function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, onNew, onDelete, onExport, onImport, open, onClose }: {
+function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, onNew, onDelete, onExport, onImport, onSort, sortBy, open, onClose }: {
   sessions: Session[]; activeSession: string | null; search: string; onSearchChange: (v: string) => void;
   onSelect: (id: string) => void; onNew: () => void; onDelete: (id: string) => void; onExport: (id: string) => void; onImport: () => void;
+  onSort: (by: string) => void; sortBy: string;
   open: boolean; onClose: () => void;
 }) {
   const [showCount, setShowCount] = useState(50);
@@ -56,6 +57,11 @@ function Sidebar({ sessions, activeSession, search, onSearchChange, onSelect, on
       <div className="sidebar-header">
         <h2>Sessions ({filtered.length})</h2>
         <button className="close-btn" onClick={onClose}>&times;</button>
+      </div>
+      <div style={{ padding: '0 8px', display: 'flex', gap: 4, marginBottom: 8 }}>
+        <button onClick={() => onSort('updatedAt')} style={{ padding: '4px 8px', borderRadius: 4, border: 'none', background: sortBy === 'updatedAt' ? '#e94560' : '#0f3460', color: '#e0e0e0', fontSize: 11, cursor: 'pointer' }}>Date</button>
+        <button onClick={() => onSort('name')} style={{ padding: '4px 8px', borderRadius: 4, border: 'none', background: sortBy === 'name' ? '#e94560' : '#0f3460', color: '#e0e0e0', fontSize: 11, cursor: 'pointer' }}>Name</button>
+        <button onClick={() => onSort('messages')} style={{ padding: '4px 8px', borderRadius: 4, border: 'none', background: sortBy === 'messages' ? '#e94560' : '#0f3460', color: '#e0e0e0', fontSize: 11, cursor: 'pointer' }}>Messages</button>
       </div>
       <div style={{ padding: '8px' }}>
         <input placeholder="Search sessions..." value={search} onChange={e => onSearchChange(e.target.value)}
@@ -147,6 +153,7 @@ export default function App() {
   const [globalSearch, setGlobalSearch] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [sortBy, setSortBy] = useState('updatedAt');
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -163,8 +170,8 @@ export default function App() {
 
   const loadSessions = useCallback(() => {
     if (!projectDir) return;
-    fetchSessions(projectDir).then(r => setSessions(r.data)).catch(() => setErrorToast('Failed to load sessions'));
-  }, [projectDir]);
+    fetchSessions(projectDir, sortBy, 'desc').then(r => setSessions(r.data)).catch(() => setErrorToast('Failed to load sessions'));
+  }, [projectDir, sortBy]);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
 
@@ -333,7 +340,7 @@ export default function App() {
   return (
     <div className="app-layout">
       <Sidebar sessions={sessions} activeSession={activeSessionId} search={searchQuery} onSearchChange={setSearchQuery}
-        onSelect={handleSelectSession} onNew={handleNewSession} onDelete={handleDeleteSession} onExport={handleExportSession} onImport={handleImportSession} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        onSelect={handleSelectSession} onNew={handleNewSession} onDelete={handleDeleteSession} onExport={handleExportSession} onImport={handleImportSession} onSort={setSortBy} sortBy={sortBy} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="main-panel">
         <div className="chat-header">
           <button className="menu-btn" onClick={() => setSidebarOpen(true)}>&#9776;</button>

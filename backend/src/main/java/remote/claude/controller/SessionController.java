@@ -21,8 +21,19 @@ public class SessionController {
 
     @GetMapping
     public ResponseEntity<List<Session>> listSessions(
-            @RequestParam(required = false, defaultValue = "") String projectDir) {
-        return ResponseEntity.ok(sessionService.listSessions(projectDir));
+            @RequestParam(required = false, defaultValue = "") String projectDir,
+            @RequestParam(required = false, defaultValue = "updatedAt") String sortBy,
+            @RequestParam(required = false, defaultValue = "desc") String order) {
+        List<Session> sessions = sessionService.listSessions(projectDir);
+        // Apply sorting
+        if ("name".equals(sortBy)) {
+            sessions.sort((a, b) -> "asc".equals(order) ? a.getName().compareTo(b.getName()) : b.getName().compareTo(a.getName()));
+        } else if ("messages".equals(sortBy)) {
+            sessions.sort((a, b) -> "asc".equals(order) ? a.getMessageCount() - b.getMessageCount() : b.getMessageCount() - a.getMessageCount());
+        } else {
+            sessions.sort((a, b) -> "asc".equals(order) ? a.getUpdatedAt().compareTo(b.getUpdatedAt()) : b.getUpdatedAt().compareTo(a.getUpdatedAt()));
+        }
+        return ResponseEntity.ok(sessions);
     }
 
     @GetMapping("/{id}")

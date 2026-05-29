@@ -75,8 +75,8 @@ const log = (level: 'info' | 'warn' | 'error', msg: string, data?: unknown) => {
 };
 
 // ── Sessions ──
-export const fetchSessions = (projectDir = '') =>
-  api.get<Session[]>('/sessions', { params: { projectDir } });
+export const fetchSessions = (projectDir = '', sortBy = 'updatedAt', order = 'desc') =>
+  api.get<Session[]>('/sessions', { params: { projectDir, sortBy, order } });
 
 export const deleteSession = (id: string, projectDir = '') =>
   api.delete(`/sessions/${id}`, { params: { projectDir } });
