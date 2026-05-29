@@ -55,6 +55,13 @@ public class SessionController {
         return ResponseEntity.notFound().build();
     }
 
+    @GetMapping("/search")
+    public ResponseEntity<List<Map<String, Object>>> searchMessages(
+            @RequestParam String query,
+            @RequestParam(required = false, defaultValue = "") String projectDir) {
+        return ResponseEntity.ok(sessionService.searchMessages(query, projectDir));
+    }
+
     @GetMapping("/export/{id}")
     public ResponseEntity<?> exportSession(
             @PathVariable String id,

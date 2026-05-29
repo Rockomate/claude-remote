@@ -94,6 +94,14 @@ export const importSession = (file: File, projectDir = '') => {
   return api.post<{ id: string; name: string; path: string }>('/sessions/import', fd);
 };
 
+export interface SearchResult {
+  sessionId: string;
+  content: string;
+}
+
+export const searchMessages = (query: string, projectDir = '') =>
+  api.get<SearchResult[]>('/sessions/search', { params: { query, projectDir } });
+
 // ── Models ──
 export const fetchModels = () =>
   api.get<Model[]>('/models');

@@ -4,8 +4,8 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { fetchSessions, deleteSession, fetchModels, fetchConfig, connectChat, fetchProjects, fetchSessionMessages, exportSession, importSession } from './api/client';
-import type { Session, Model, ProjectInfo, ChatMessageItem } from './api/client';
+import { fetchSessions, deleteSession, fetchModels, fetchConfig, connectChat, fetchProjects, fetchSessionMessages, exportSession, importSession, searchMessages } from './api/client';
+import type { Session, Model, ProjectInfo, ChatMessageItem, SearchResult } from './api/client';
 
 interface Message {
   role: 'user' | 'assistant' | 'error';
@@ -144,6 +144,9 @@ export default function App() {
   const [errorToast, setErrorToast] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -270,6 +273,16 @@ export default function App() {
     input.click();
   };
 
+  const handleGlobalSearch = async (query: string) => {
+    setGlobalSearch(query);
+    if (!query.trim()) { setSearchResults([]); setShowSearchResults(false); return; }
+    try {
+      const res = await searchMessages(query, projectDir);
+      setSearchResults(res.data);
+      setShowSearchResults(true);
+    } catch { setSearchResults([]); }
+  };
+
   // Network health indicator
   const [networkOk, setNetworkOk] = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('claude-remote-theme') || 'dark');
@@ -324,10 +337,25 @@ export default function App() {
       <div className="main-panel">
         <div className="chat-header">
           <button className="menu-btn" onClick={() => setSidebarOpen(true)}>&#9776;</button>
-          <h1 style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {activeSessionId ? `Session ${activeSessionId.slice(0, 8)}` : 'New Session'}
-            {!networkOk && <span style={{ color: '#ff6b6b', marginLeft: 8, fontSize: 11 }}>[Offline]</span>}
-          </h1>
+          <div style={{ position: 'relative', flex: 1 }}>
+            <input
+              value={globalSearch}
+              onChange={e => handleGlobalSearch(e.target.value)}
+              placeholder="Search all sessions..."
+              style={{ width: '100%', padding: '4px 8px', borderRadius: 6, border: '1px solid #2a2a4a', background: '#1a1a2e', color: '#e0e0e0', fontSize: 12, outline: 'none' }}
+            />
+            {showSearchResults && searchResults.length > 0 && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#16213e', border: '1px solid #2a2a4a', borderRadius: 8, maxHeight: 200, overflow: 'auto', zIndex: 100, marginTop: 4 }}>
+                {searchResults.slice(0, 10).map((r, i) => (
+                  <div key={i} onClick={() => { handleSelectSession(r.sessionId); setShowSearchResults(false); setGlobalSearch(''); }}
+                    style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 12, borderBottom: '1px solid #2a2a4a' }}>
+                    <div style={{ color: '#e94560', fontSize: 11 }}>{r.sessionId.slice(0, 8)}</div>
+                    <div style={{ color: '#a0a0b0', marginTop: 2 }}>{r.content.slice(0, 100)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           {models.length > 0 && (
             <select className="model-select" value={selectedModel} onChange={e => setSelectedModel(e.target.value)}>
               {models.map(m => <option key={m.id} value={m.id}>{m.name || m.id}</option>)}

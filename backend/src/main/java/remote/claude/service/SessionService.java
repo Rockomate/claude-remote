@@ -217,6 +217,43 @@ public class SessionService {
         return deleted;
     }
 
+    /**
+     * Search across all sessions for messages matching a query string.
+     */
+    public List<Map<String, Object>> searchMessages(String query, String projectDir) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        if (query == null || query.isEmpty()) return results;
+
+        String sessionDir = getSessionDir(projectDir);
+        if (sessionDir == null) return results;
+
+        File dir = new File(sessionDir);
+        if (!dir.exists() || !dir.isDirectory()) return results;
+
+        File[] files = dir.listFiles((d, name) -> name.endsWith(".jsonl"));
+        if (files == null) return results;
+
+        for (File f : files) {
+            String sessionId = f.getName().replace(".jsonl", "");
+            try (BufferedReader reader = new BufferedReader(new FileReader(f, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String content = extractContent(line);
+                    if (content != null && content.toLowerCase().contains(query.toLowerCase())) {
+                        Map<String, Object> hit = new java.util.HashMap<>();
+                        hit.put("sessionId", sessionId);
+                        hit.put("content", content.length() > 200 ? content.substring(0, 200) + "..." : content);
+                        results.add(hit);
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Failed to search session: {}", f.getName(), e);
+            }
+        }
+        return results;
+    }
+
     private Session parseSessionFile(File file) {
         try {
             String sessionId = file.getName().replace(".jsonl", "");
