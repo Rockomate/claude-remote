@@ -453,7 +453,7 @@ export default function App() {
             </div>
           ) : messages.map((m, i) =>
               <div key={i} className={`message ${m.role} ${m.streaming ? 'streaming' : ''}`}>
-                {m.role === 'assistant' && !m.streaming ? (
+                {m.role === 'assistant' ? (
                   <Markdown remarkPlugins={[remarkGfm]} components={{
                     code({ className, children, ...props }) {
                       const match = /language-(\w+)/.exec(className || '');
@@ -466,8 +466,10 @@ export default function App() {
                       );
                     }
                   }}>{m.content}</Markdown>
+                ) : m.role === 'user' ? (
+                  <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
                 ) : (
-                  m.content.split('\n').map((ln, j) => <span key={j}>{ln}<br /></span>)
+                  <div style={{ color: 'var(--error)', whiteSpace: 'pre-wrap' }}>{m.content}</div>
                 )}
                 {!m.streaming && m.role === 'assistant' && m.content && (
                   <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
