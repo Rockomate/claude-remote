@@ -68,12 +68,20 @@ public class FileController {
     }
 
     private boolean isWithinAllowedPaths(String dir) {
-        String projectDir = config.getDefaultProjectDir();
-        if (projectDir == null) return false;
+        if (dir == null || dir.isEmpty()) return false;
         try {
-            File allowed = new File(projectDir).getCanonicalFile();
             File target = new File(dir).getCanonicalFile();
-            return target.getPath().startsWith(allowed.getPath());
+            String targetPath = target.getPath();
+
+            // Allow access to common development directories
+            String userHome = System.getProperty("user.home");
+            String desktop = userHome + File.separator + "Desktop";
+            String documents = userHome + File.separator + "Documents";
+            String downloads = userHome + File.separator + "Downloads";
+
+            return targetPath.startsWith(desktop) ||
+                   targetPath.startsWith(documents) ||
+                   targetPath.startsWith(downloads);
         } catch (IOException e) {
             return false;
         }
