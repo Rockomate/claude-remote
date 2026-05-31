@@ -4,8 +4,8 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { fetchSessions, deleteSession, fetchModels, fetchConfig, connectChat, fetchProjects, fetchSessionMessages, exportSession, importSession, searchMessages } from './api/client';
-import type { Session, Model, ProjectInfo, ChatMessageItem, SearchResult } from './api/client';
+import { fetchSessions, deleteSession, fetchModels, fetchConfig, connectChat, fetchProjects, fetchSessionMessages, exportSession, importSession, searchMessages, fetchFileTree, readFile, uploadFile } from './api/client';
+import type { Session, Model, ProjectInfo, ChatMessageItem, SearchResult, FileTreeNode } from './api/client';
 
 interface Message {
   role: 'user' | 'assistant' | 'error';
@@ -154,6 +154,12 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [sortBy, setSortBy] = useState('updatedAt');
+  const [currentPath, setCurrentPath] = useState('');
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const [fileTree, setFileTree] = useState<FileTreeNode | null>(null);
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [viewingFile, setViewingFile] = useState(false);
+  const [loadingTree, setLoadingTree] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -290,6 +296,59 @@ export default function App() {
     } catch { setSearchResults([]); }
   };
 
+  const handleOpenFileBrowser = async () => {
+    setShowFileBrowser(true);
+    setCurrentPath(projectDir);
+    setViewingFile(false);
+    setFileContent(null);
+    setLoadingTree(true);
+    try {
+      const res = await fetchFileTree(projectDir, 2);
+      setFileTree(res.data);
+    } catch { setErrorToast('Failed to load files'); }
+    setLoadingTree(false);
+  };
+
+  const handleNavigateToPath = async (path: string) => {
+    setCurrentPath(path);
+    setViewingFile(false);
+    setFileContent(null);
+    setLoadingTree(true);
+    try {
+      const res = await fetchFileTree(path, 2);
+      setFileTree(res.data);
+    } catch { setErrorToast('Failed to load directory'); }
+    setLoadingTree(false);
+  };
+
+  const handleViewFile = async (filePath: string) => {
+    setLoadingTree(true);
+    try {
+      const res = await readFile(filePath);
+      setFileContent(res.data.content);
+      setViewingFile(true);
+    } catch { setErrorToast('Failed to read file'); }
+    setLoadingTree(false);
+  };
+
+  const handleUploadFile = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.onchange = async (e) => {
+      const files = (e.target as HTMLInputElement).files;
+      if (!files) return;
+      for (const file of files) {
+        try {
+          await uploadFile(file, currentPath);
+          setErrorToast('Uploaded: ' + file.name);
+        } catch { setErrorToast('Failed to upload: ' + file.name); }
+      }
+      handleNavigateToPath(currentPath);
+    };
+    input.click();
+  };
+
   // Network health indicator
   const [networkOk, setNetworkOk] = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('claude-remote-theme') || 'dark');
@@ -369,6 +428,7 @@ export default function App() {
             </select>
           )}
           <ProjectSwitcher projects={projects} currentDir={projectDir} onSwitch={switchProject} />
+          <button className="icon-btn" onClick={handleOpenFileBrowser} title="Files" style={{ fontSize: 14 }}>&#128193;</button>
           <button className="icon-btn" onClick={() => setMessages([])} title="Clear chat" style={{ fontSize: 14 }}>&#128465;</button>
           <button className="icon-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} style={{ fontSize: 14 }}>
             {theme === 'dark' ? '☀️' : '🌙'}
@@ -432,6 +492,42 @@ export default function App() {
         </div>
       </div>
       {errorToast && <Toast msg={errorToast} onClose={() => setErrorToast('')} />}
+      {showFileBrowser && (
+        <div className="modal-overlay" onClick={() => setShowFileBrowser(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Files — {currentPath.split(/[\\/]/).pop() || currentPath}</h3>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="icon-btn" onClick={handleUploadFile} title="Upload" style={{ fontSize: 13 }}>&#128228;</button>
+                <button className="icon-btn" onClick={() => { const parent = currentPath.replace(/[\\/][^\\/]+$/, ''); if (parent && parent !== currentPath) handleNavigateToPath(parent); }} title="Up" style={{ fontSize: 13 }}>&#8593;</button>
+                <button className="icon-btn" onClick={() => setShowFileBrowser(false)} style={{ fontSize: 16 }}>&times;</button>
+              </div>
+            </div>
+            <div style={{ padding: '4px 12px', background: '#0f3460', fontSize: 11, color: '#a0a0b0', wordBreak: 'break-all' }}>
+              {currentPath.split(/[\\/]/).map((seg, i, arr) => (
+                <span key={i}>
+                  <span style={{ cursor: 'pointer', color: '#e94560' }} onClick={() => handleNavigateToPath(arr.slice(0, i + 1).join('\\'))}>{seg}</span>
+                  {i < arr.length - 1 && <span style={{ margin: '0 2px' }}>/</span>}
+                </span>
+              ))}
+            </div>
+            <div className="modal-content">
+              {loadingTree ? (
+                <div style={{ textAlign: 'center', padding: 32, color: '#666' }}>Loading...</div>
+              ) : viewingFile && fileContent !== null ? (
+                <pre style={{ fontSize: 12, lineHeight: 1.5, whiteSpace: 'pre-wrap', padding: 12 }}>{fileContent}</pre>
+              ) : fileTree?.children?.map((item, i) => (
+                <div key={i} className="file-item"
+                  onClick={() => item.directory ? handleNavigateToPath(item.path) : handleViewFile(item.path)}>
+                  <span className="icon">{item.directory ? '📁' : '📄'}</span>
+                  <span className="file-name">{item.name}</span>
+                  {!item.directory && <span className="file-size">{item.size > 1024 ? (item.size / 1024).toFixed(1) + 'KB' : item.size + 'B'}</span>}
+                </div>
+              )) || <div style={{ textAlign: 'center', padding: 24, color: '#666' }}>No files</div>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
