@@ -289,11 +289,15 @@ export default function App() {
   const handleGlobalSearch = async (query: string) => {
     setGlobalSearch(query);
     if (!query.trim()) { setSearchResults([]); setShowSearchResults(false); return; }
-    try {
-      const res = await searchMessages(query, projectDir);
-      setSearchResults(res.data);
-      setShowSearchResults(true);
-    } catch { setSearchResults([]); }
+    // Debounce: only search after 300ms of no typing
+    const searchTimeout = setTimeout(async () => {
+      try {
+        const res = await searchMessages(query, projectDir);
+        setSearchResults(res.data);
+        setShowSearchResults(true);
+      } catch { setSearchResults([]); }
+    }, 300);
+    return () => clearTimeout(searchTimeout);
   };
 
   const handleOpenFileBrowser = async () => {
